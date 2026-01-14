@@ -3,7 +3,6 @@ import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
 import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle } from 'lucide-react';
 
-// Standard Component
 const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, tables }: any) => {
     
     // Permission: Owner, Staff, Chef can act
@@ -82,7 +81,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
 export const KitchenView: React.FC = () => {
   const { orders, updateOrderStatus, tables, currentUser } = useStore();
   
-  // Directly filter without intermediate activeOrders to avoid any stale closure or caching issues
+  // Robust filtering directly from orders array
   const pendingOrders = orders ? orders.filter(o => o.status === OrderStatus.PENDING) : [];
   const cookingOrders = orders ? orders.filter(o => o.status === OrderStatus.COOKING) : [];
   const servingOrders = orders ? orders.filter(o => o.status === OrderStatus.SERVING) : [];
