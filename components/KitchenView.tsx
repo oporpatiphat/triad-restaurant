@@ -33,7 +33,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                     <div className="font-bold text-stone-800 mt-1">{order.customerName}</div>
                     <div className="text-[10px] text-red-500 uppercase font-bold tracking-wide">{order.customerClass}</div>
                   </div>
-                  <span className="text-xs text-stone-400 font-mono">{order.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                  <span className="text-xs text-stone-400 font-mono">{new Date(order.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                </div>
                
                <div className="space-y-1 mb-4 border-t border-b border-stone-100 py-2">
@@ -81,10 +81,12 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
 export const KitchenView: React.FC = () => {
   const { orders, updateOrderStatus, tables, currentUser } = useStore();
   
-  // Robust filtering directly from orders array
-  const pendingOrders = orders ? orders.filter(o => o.status === OrderStatus.PENDING) : [];
-  const cookingOrders = orders ? orders.filter(o => o.status === OrderStatus.COOKING) : [];
-  const servingOrders = orders ? orders.filter(o => o.status === OrderStatus.SERVING) : [];
+  // Safe filtering: Ensure orders is an array before filtering
+  const safeOrders = Array.isArray(orders) ? orders : [];
+
+  const pendingOrders = safeOrders.filter(o => o.status === OrderStatus.PENDING);
+  const cookingOrders = safeOrders.filter(o => o.status === OrderStatus.COOKING);
+  const servingOrders = safeOrders.filter(o => o.status === OrderStatus.SERVING);
 
   return (
     <div className="h-full flex flex-col">

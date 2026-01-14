@@ -43,22 +43,22 @@ const ENHANCED_INITIAL_MENU = INITIAL_MENU.map(item => ({
   dailyStock: -1 
 }));
 
-// UPDATED KEYS TO V6 TO FORCE CLEAN STATE
+// Use V7 Keys to ensure fresh start with new logic
 const KEYS = {
-  TABLES: 'TRIAD_TABLES_V6',
-  ORDERS: 'TRIAD_ORDERS_V6',
-  MENU: 'TRIAD_MENU_V6',
-  INVENTORY: 'TRIAD_INVENTORY_V6',
-  STAFF: 'TRIAD_STAFF_V6',
-  POSITIONS: 'TRIAD_POSITIONS_V6',
-  SESSION: 'TRIAD_SESSION_V6',
-  USER: 'TRIAD_USER_V6'
+  TABLES: 'TRIAD_TABLES_V7',
+  ORDERS: 'TRIAD_ORDERS_V7',
+  MENU: 'TRIAD_MENU_V7',
+  INVENTORY: 'TRIAD_INVENTORY_V7',
+  STAFF: 'TRIAD_STAFF_V7',
+  POSITIONS: 'TRIAD_POSITIONS_V7',
+  SESSION: 'TRIAD_SESSION_V7',
+  USER: 'TRIAD_USER_V7'
 };
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isCloudMode] = useState(isCloudEnabled && !!db);
 
-  // --- Initial State ---
+  // --- Initial State Loaders ---
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem(KEYS.USER);
@@ -66,14 +66,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     } catch(e) {}
     return null;
   });
-
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(KEYS.USER, JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem(KEYS.USER);
-    }
-  }, [currentUser]);
 
   const [storeSession, setStoreSession] = useState<StoreSession>(() => {
     if (isCloudMode) return { isOpen: false, openedAt: new Date() };
@@ -118,10 +110,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return [];
   });
 
-  // REMOVED: The mount-time safety net effect has been removed to prevent race conditions 
-  // where stale empty order lists might trigger table resets. 
-  // We now rely on the robust atomic updates in createOrder.
-
   const [menu, setMenu] = useState<MenuItem[]>(() => {
     if (isCloudMode) return ENHANCED_INITIAL_MENU;
     try {
@@ -157,6 +145,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     } catch(e) {}
     return INITIAL_POSITIONS;
   });
+
+  // --- Helpers for Direct Persistence (Synchronous Saving) ---
+  const saveToStorage = (key: string, data: any) => {
+    if (!isCloudMode) {
+        localStorage.setItem(key, JSON.stringify(data));
+    }
+  };
 
   // --- CLOUD LISTENERS ---
   useEffect(() => {
@@ -200,15 +195,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, [isCloudMode]);
 
-  // --- LocalStorage Persistence ---
-  useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.SESSION, JSON.stringify(storeSession)); }, [storeSession, isCloudMode]);
-  useEffect(() => { if (!isCloudMode && tables.length > 0) localStorage.setItem(KEYS.TABLES, JSON.stringify(tables)); }, [tables, isCloudMode]);
-  useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.ORDERS, JSON.stringify(orders)); }, [orders, isCloudMode]);
-  useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.MENU, JSON.stringify(menu)); }, [menu, isCloudMode]);
-  useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.INVENTORY, JSON.stringify(inventory)); }, [inventory, isCloudMode]);
-  useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.STAFF, JSON.stringify(staffList)); }, [staffList, isCloudMode]);
-  useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.POSITIONS, JSON.stringify(availablePositions)); }, [availablePositions, isCloudMode]);
-
 
   // --- Actions ---
 
@@ -224,12 +210,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const login = (username: string, password?: string) => {
+    // ... logic same as before ...
     if (username === 'sumalin' && password === '9753127') {
       const existingAdmin = staffList.find(u => u.username === 'sumalin');
-      if (existingAdmin) {
-        setCurrentUser(existingAdmin);
-      } else {
-        const masterAdmin: User = {
+      const user = existingAdmin || {
           id: 'u_master_admin',
           username: 'sumalin',
           name: 'คุณสุมลิน (Master)',
@@ -238,9 +222,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           staffClass: 'Elite',
           startDate: new Date().toISOString(),
           isActive: true
-        };
-        setCurrentUser(masterAdmin);
-      }
+      };
+      setCurrentUser(user);
+      saveToStorage(KEYS.USER, user);
       return true;
     }
     const user = staffList.find(u => u.username === username && u.password === password);
@@ -250,15 +234,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return false;
       }
       setCurrentUser(user);
+      saveToStorage(KEYS.USER, user);
       return true;
     }
     return false;
   };
 
-  const logout = () => setCurrentUser(null);
+  const logout = () => {
+      setCurrentUser(null);
+      localStorage.removeItem(KEYS.USER);
+  };
 
   const openStore = async (dailyMenuUpdates: MenuItem[]) => {
     if (isCloudMode && db) {
+       // ... cloud logic ...
        const batch = writeBatch(db!);
        batch.set(doc(db!, 'config', 'session'), { isOpen: true, openedAt: new Date() });
        dailyMenuUpdates.forEach(m => {
@@ -266,8 +255,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
        });
        await batch.commit();
     } else {
+       const newSession = { isOpen: true, openedAt: new Date() };
        setMenu(dailyMenuUpdates);
-       setStoreSession({ isOpen: true, openedAt: new Date() });
+       setStoreSession(newSession);
+       saveToStorage(KEYS.MENU, dailyMenuUpdates);
+       saveToStorage(KEYS.SESSION, newSession);
     }
   };
 
@@ -275,7 +267,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (isCloudMode && db) {
         await updateDoc(doc(db!, 'config', 'session'), { isOpen: false, closedAt: new Date() });
     } else {
-        setStoreSession(prev => ({ ...prev, isOpen: false, closedAt: new Date() }));
+        const newSession = { ...storeSession, isOpen: false, closedAt: new Date() };
+        setStoreSession(newSession);
+        saveToStorage(KEYS.SESSION, newSession);
     }
   };
 
@@ -283,12 +277,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (isCloudMode && db) {
         await updateDoc(doc(db!, 'tables', tableId), { status });
     } else {
-        setTables(prev => prev.map(t => t.id === tableId ? { ...t, status } : t));
+        const newTables = tables.map(t => t.id === tableId ? { ...t, status } : t);
+        setTables(newTables);
+        saveToStorage(KEYS.TABLES, newTables);
     }
   };
 
   const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[]) => {
-    // Inventory Checks
+    // 1. Inventory Check
     for (const item of items) {
       const menuItem = menu.find(m => m.id === item.menuItemId);
       if (menuItem && menuItem.dailyStock !== -1 && menuItem.dailyStock < item.quantity) {
@@ -314,6 +310,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
     }
 
+    // 2. Prepare Data
     const newOrder: Order = {
         id: `ord-${Date.now()}-${Math.floor(Math.random()*1000)}`,
         tableId,
@@ -326,6 +323,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     if (isCloudMode && db) {
+        // ... Cloud Mode (unchanged) ...
         const batch = writeBatch(db!);
         batch.set(doc(db!, 'orders', newOrder.id), newOrder);
         batch.update(doc(db!, 'tables', tableId), { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
@@ -344,34 +342,48 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
         await batch.commit();
     } else {
-        // LOCAL MODE UPDATES
+        // --- LOCAL MODE: ATOMIC & DIRECT SAVE ---
         
-        // 1. Stock Deduction
-        setMenu(prevMenu => prevMenu.map(m => {
+        // A. Update Orders
+        const newOrders = [...orders, newOrder];
+        
+        // B. Update Tables
+        const newTables = tables.map(t => 
+             t.id === tableId 
+             ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } 
+             : t
+        );
+
+        // C. Update Menu Stock
+        const newMenu = menu.map(m => {
             const orderItem = items.find(i => i.menuItemId === m.id);
             if (orderItem && m.dailyStock !== -1) {
                 return { ...m, dailyStock: Math.max(0, m.dailyStock - orderItem.quantity) };
             }
             return m;
-        }));
-        setInventory(prevInventory => {
-            const newInventory = prevInventory.map(ing => ({ ...ing }));
-            for (const [ingName, requiredQty] of requiredIngredients.entries()) {
-                const idx = newInventory.findIndex(i => i.name === ingName);
-                if (idx !== -1) newInventory[idx].quantity -= requiredQty;
-            }
-            return newInventory;
         });
-        
-        // 2. ATOMIC UPDATE: Create Order AND Lock Table instantly
-        // Using functional updates ensures we are working with the latest state,
-        // solving race conditions.
-        setOrders(prev => [...prev, newOrder]);
-        setTables(prev => prev.map(t => 
-             t.id === tableId 
-             ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } 
-             : t
-        ));
+
+        // D. Update Inventory
+        const newInventory = inventory.map(ing => {
+            const requiredQty = requiredIngredients.get(ing.name);
+            if (requiredQty) {
+                return { ...ing, quantity: Math.max(0, ing.quantity - requiredQty) };
+            }
+            return ing;
+        });
+
+        // E. Commit ALL changes to State
+        setOrders(newOrders);
+        setTables(newTables);
+        setMenu(newMenu);
+        setInventory(newInventory);
+
+        // F. Commit ALL changes to Storage IMMEDIATELY
+        // This prevents the "disappearing" bug if the browser reloads/navigates fast.
+        saveToStorage(KEYS.ORDERS, newOrders);
+        saveToStorage(KEYS.TABLES, newTables);
+        saveToStorage(KEYS.MENU, newMenu);
+        saveToStorage(KEYS.INVENTORY, newInventory);
     }
   };
 
@@ -382,13 +394,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (status === OrderStatus.COMPLETED && paymentMethod) updates.paymentMethod = paymentMethod;
 
     if (isCloudMode && db) {
+        // ... Cloud Mode ...
         const batch = writeBatch(db!);
         batch.update(doc(db!, 'orders', orderId), updates);
         if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
             const order = orders.find(o => o.id === orderId);
-            const targetTableId = order?.tableId;
-            if (targetTableId) {
-                batch.update(doc(db!, 'tables', targetTableId), { status: TableStatus.AVAILABLE, currentOrderId: null });
+            if (order) {
+                batch.update(doc(db!, 'tables', order.tableId), { status: TableStatus.AVAILABLE, currentOrderId: null });
             } 
             if (status === OrderStatus.CANCELLED && order) {
                  order.items.forEach(item => {
@@ -401,89 +413,137 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
         await batch.commit();
     } else {
-        // Local Mode Order Update
-        setOrders(prev => prev.map(o => {
+        // --- LOCAL MODE: DIRECT SAVE ---
+        
+        // Update Order
+        const newOrders = orders.map(o => {
             if (o.id !== orderId) return o;
             return { ...o, ...updates };
-        }));
+        });
+        setOrders(newOrders);
+        saveToStorage(KEYS.ORDERS, newOrders);
         
-        // Robust Table Release: Find table by currentOrderId matches
-        // This is safer than finding order then finding table, as it relies on table pointer.
+        // Update Table (if freeing)
         if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
-             setTables(prev => prev.map(t => 
+             const newTables = tables.map(t => 
                 t.currentOrderId === orderId 
                 ? { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined } 
                 : t
-             ));
+             );
+             setTables(newTables);
+             saveToStorage(KEYS.TABLES, newTables);
         }
         
-        // Stock restoration on cancel
+        // Update Stock (if cancelled)
         if (status === OrderStatus.CANCELLED) {
-             // We need the order details to restore stock.
-             // Accessing 'orders' state here directly is safe as this function 
-             // is recreated on render with fresh state closure.
              const order = orders.find(o => o.id === orderId);
              if (order) {
-                 setMenu(prevMenu => prevMenu.map(m => {
+                 const newMenu = menu.map(m => {
                     const orderItem = order.items.find(i => i.menuItemId === m.id);
                     if (orderItem && m.dailyStock !== -1) return { ...m, dailyStock: m.dailyStock + orderItem.quantity };
                     return m;
-                 }));
+                 });
+                 setMenu(newMenu);
+                 saveToStorage(KEYS.MENU, newMenu);
              }
         }
     }
   };
 
-  // ... (Other CRUD functions remain the same) ...
+  // ... (Other CRUD functions updated to use Direct Save) ...
+
   const addMenuItem = async (item: MenuItem) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), item);
-    else setMenu(prev => [...prev, item]);
+    else {
+        const newData = [...menu, item];
+        setMenu(newData);
+        saveToStorage(KEYS.MENU, newData);
+    }
   };
   const toggleMenuAvailability = async (itemId: string) => {
     if (isCloudMode && db) {
         const item = menu.find(m => m.id === itemId);
         if (item) await updateDoc(doc(db!, 'menu', itemId), { isAvailable: !item.isAvailable });
-    } else setMenu(prev => prev.map(item => item.id === itemId ? { ...item, isAvailable: !item.isAvailable } : item));
+    } else {
+        const newData = menu.map(item => item.id === itemId ? { ...item, isAvailable: !item.isAvailable } : item);
+        setMenu(newData);
+        saveToStorage(KEYS.MENU, newData);
+    }
   };
   const updateMenuStock = async (itemId: string, quantity: number) => {
     if (isCloudMode && db) await updateDoc(doc(db!, 'menu', itemId), { dailyStock: quantity });
-    else setMenu(prev => prev.map(item => item.id === itemId ? { ...item, dailyStock: quantity } : item));
+    else {
+        const newData = menu.map(item => item.id === itemId ? { ...item, dailyStock: quantity } : item);
+        setMenu(newData);
+        saveToStorage(KEYS.MENU, newData);
+    }
   };
   const updateIngredientQuantity = async (itemId: string, delta: number) => {
     if (isCloudMode && db) {
         const item = inventory.find(i => i.id === itemId);
         if(item) await updateDoc(doc(db!, 'inventory', itemId), { quantity: Math.max(0, item.quantity + delta) });
-    } else setInventory(prev => prev.map(item => item.id === itemId ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item));
+    } else {
+        const newData = inventory.map(item => item.id === itemId ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item);
+        setInventory(newData);
+        saveToStorage(KEYS.INVENTORY, newData);
+    }
   };
   const addIngredient = async (ingredient: Ingredient) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'inventory', ingredient.id), ingredient);
-    else setInventory(prev => [...prev, ingredient]);
+    else {
+        const newData = [...inventory, ingredient];
+        setInventory(newData);
+        saveToStorage(KEYS.INVENTORY, newData);
+    }
   };
   const removeIngredient = async (id: string) => {
     if (isCloudMode && db) await deleteDoc(doc(db!, 'inventory', id));
-    else setInventory(prev => prev.filter(item => item.id !== id));
+    else {
+        const newData = inventory.filter(item => item.id !== id);
+        setInventory(newData);
+        saveToStorage(KEYS.INVENTORY, newData);
+    }
   };
   const addStaff = async (user: User) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'staff', user.id), user);
-    else setStaffList(prev => [...prev, user]);
+    else {
+        const newData = [...staffList, user];
+        setStaffList(newData);
+        saveToStorage(KEYS.STAFF, newData);
+    }
   };
   const updateStaff = async (user: User) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'staff', user.id), user);
-    else setStaffList(prev => prev.map(u => u.id === user.id ? user : u));
+    else {
+        const newData = staffList.map(u => u.id === user.id ? user : u);
+        setStaffList(newData);
+        saveToStorage(KEYS.STAFF, newData);
+    }
   };
   const terminateStaff = async (userId: string) => {
     if (!currentUser) return;
     if (isCloudMode && db) await updateDoc(doc(db!, 'staff', userId), { isActive: false, endDate: new Date().toISOString().split('T')[0] });
-    else setStaffList(prev => prev.map(u => u.id === userId ? { ...u, isActive: false, endDate: new Date().toISOString().split('T')[0] } : u));
+    else {
+        const newData = staffList.map(u => u.id === userId ? { ...u, isActive: false, endDate: new Date().toISOString().split('T')[0] } : u);
+        setStaffList(newData);
+        saveToStorage(KEYS.STAFF, newData);
+    }
   };
   const addPosition = async (position: string) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'config', 'positions'), { list: [...availablePositions, position] });
-    else setAvailablePositions(prev => [...prev, position]);
+    else {
+        const newData = [...availablePositions, position];
+        setAvailablePositions(newData);
+        saveToStorage(KEYS.POSITIONS, newData);
+    }
   };
   const removePosition = async (position: string) => {
     const newList = availablePositions.filter(p => p !== position);
     if (isCloudMode && db) await setDoc(doc(db!, 'config', 'positions'), { list: newList });
-    else setAvailablePositions(newList);
+    else {
+        setAvailablePositions(newList);
+        saveToStorage(KEYS.POSITIONS, newList);
+    }
   };
   const movePosition = async (position: string, direction: 'up' | 'down') => {
     const index = availablePositions.indexOf(position);
@@ -494,7 +554,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const swapIndex = direction === 'up' ? index - 1 : index + 1;
     [newPositions[index], newPositions[swapIndex]] = [newPositions[swapIndex], newPositions[index]];
     if (isCloudMode && db) await setDoc(doc(db!, 'config', 'positions'), { list: newPositions });
-    else setAvailablePositions(newPositions);
+    else {
+        setAvailablePositions(newPositions);
+        saveToStorage(KEYS.POSITIONS, newPositions);
+    }
   };
 
   return (
