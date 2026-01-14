@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem } from '../types';
+import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem, Role } from '../types';
 import { generateTables, INITIAL_INGREDIENTS, INITIAL_MENU, MOCK_USERS, INITIAL_POSITIONS } from '../constants';
 import { db, isCloudEnabled } from './firebaseConfig';
 import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, writeBatch, Timestamp, query, orderBy } from 'firebase/firestore';
@@ -52,14 +52,30 @@ const KEYS = {
   INVENTORY: 'TRIAD_INVENTORY_V5',
   STAFF: 'TRIAD_STAFF_V5',
   POSITIONS: 'TRIAD_POSITIONS_V5',
-  SESSION: 'TRIAD_SESSION_V5'
+  SESSION: 'TRIAD_SESSION_V5',
+  USER: 'TRIAD_USER_V5' // New Key for persistence
 };
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isCloudMode] = useState(isCloudEnabled && !!db);
 
   // --- Initial State (Loads from LS first, overridden by Cloud later if active) ---
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem(KEYS.USER);
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return null;
+  });
+
+  // Persist User
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(KEYS.USER, JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem(KEYS.USER);
+    }
+  }, [currentUser]);
 
   const [storeSession, setStoreSession] = useState<StoreSession>(() => {
     if (isCloudMode) return { isOpen: false, openedAt: new Date() };
@@ -244,14 +260,24 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const login = (username: string, password?: string) => {
     // 1. MASTER KEY LOGIC (เข้าได้เสมอ ไม่สน Database)
     if (username === 'sumalin' && password === '9753127') {
-      // พยายามหาใน list ก่อน เผื่อมีข้อมูลเก่า
       const existingAdmin = staffList.find(u => u.username === 'sumalin');
+      
+      // ถ้ามีข้อมูลใน DB ให้ใช้ข้อมูลนั้น
       if (existingAdmin) {
         setCurrentUser(existingAdmin);
       } else {
-        // ถ้าไม่มี (เช่น DB ว่าง) ให้ใช้ MOCK_USERS ตัวแรกที่เป็น admin
-        const backupAdmin = MOCK_USERS[0];
-        setCurrentUser(backupAdmin);
+        // ถ้าไม่มี (Database ว่างเปล่า) ให้สร้าง User Admin จำลองขึ้นมาเลย
+        const masterAdmin: User = {
+          id: 'u_master_admin',
+          username: 'sumalin',
+          name: 'คุณสุมลิน (Master)',
+          role: Role.OWNER,
+          position: 'Co-CEO',
+          staffClass: 'Elite',
+          startDate: new Date().toISOString(),
+          isActive: true
+        };
+        setCurrentUser(masterAdmin);
       }
       return true;
     }

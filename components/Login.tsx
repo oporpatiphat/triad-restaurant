@@ -1,17 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/StoreContext';
 import { Crown, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export const Login: React.FC = () => {
-  const { login } = useStore();
+  const { login, currentUser } = useStore();
+  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
+  // Redirect if already logged in
+  useEffect(() => {
+    if (currentUser) {
+      navigate('/floorplan');
+    }
+  }, [currentUser, navigate]);
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!login(username, password)) {
+    if (login(username, password)) {
+      navigate('/floorplan');
+    } else {
       setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกระงับ');
     }
   };
