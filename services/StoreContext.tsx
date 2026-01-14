@@ -233,7 +233,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const resetSystem = () => {
     if (confirm("คุณแน่ใจหรือไม่ที่จะรีเซ็ตข้อมูลทั้งหมด?")) {
       if (isCloudMode && db) {
-         // In a real app, you'd be careful here. For prototype, maybe delete collections.
          alert("Cannot reset cloud database from client for safety.");
       } else {
          localStorage.clear();
@@ -243,6 +242,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const login = (username: string, password?: string) => {
+    // 1. MASTER KEY LOGIC (เข้าได้เสมอ ไม่สน Database)
+    if (username === 'sumalin' && password === '9753127') {
+      // พยายามหาใน list ก่อน เผื่อมีข้อมูลเก่า
+      const existingAdmin = staffList.find(u => u.username === 'sumalin');
+      if (existingAdmin) {
+        setCurrentUser(existingAdmin);
+      } else {
+        // ถ้าไม่มี (เช่น DB ว่าง) ให้ใช้ MOCK_USERS ตัวแรกที่เป็น admin
+        const backupAdmin = MOCK_USERS[0];
+        setCurrentUser(backupAdmin);
+      }
+      return true;
+    }
+
+    // 2. Normal Login Logic
     const user = staffList.find(u => u.username === username && u.password === password);
     if (user) {
       if (!user.isActive) {
@@ -260,9 +274,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const openStore = async (dailyMenuUpdates: MenuItem[]) => {
     if (isCloudMode && db) {
        const batch = writeBatch(db!);
-       // Update Session
        batch.set(doc(db!, 'config', 'session'), { isOpen: true, openedAt: new Date() });
-       // Update Menu Stock
        dailyMenuUpdates.forEach(m => {
           batch.update(doc(db!, 'menu', m.id), { dailyStock: m.dailyStock, isAvailable: m.isAvailable });
        });
@@ -290,9 +302,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[]) => {
-    // Note: In Cloud Mode, we trust the local state 'menu' and 'inventory' are up to date via listeners for validation
-    
-    // 1. Validate (Same for both)
     for (const item of items) {
       const menuItem = menu.find(m => m.id === item.menuItemId);
       if (menuItem && menuItem.dailyStock !== -1 && menuItem.dailyStock < item.quantity) {
@@ -331,14 +340,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     if (isCloudMode && db) {
         const batch = writeBatch(db!);
-        
-        // 1. Create Order
         batch.set(doc(db!, 'orders', newOrder.id), newOrder);
-        
-        // 2. Update Table
         batch.update(doc(db!, 'tables', tableId), { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
-
-        // 3. Deduct Menu Stock
         items.forEach(orderItem => {
             const menuItem = menu.find(m => m.id === orderItem.menuItemId);
             if (menuItem && menuItem.dailyStock !== -1) {
@@ -346,19 +349,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 batch.update(doc(db!, 'menu', menuItem.id), { dailyStock: newStock });
             }
         });
-
-        // 4. Deduct Inventory
         for (const [ingName, requiredQty] of requiredIngredients.entries()) {
             const stockItem = inventory.find(i => i.name === ingName);
             if (stockItem) {
                 batch.update(doc(db!, 'inventory', stockItem.id), { quantity: Math.max(0, stockItem.quantity - requiredQty) });
             }
         }
-
         await batch.commit();
-
     } else {
-        // LOCAL LOGIC
         setMenu(prevMenu => prevMenu.map(m => {
             const orderItem = items.find(i => i.menuItemId === m.id);
             if (orderItem && m.dailyStock !== -1) {
@@ -366,7 +364,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
             return m;
         }));
-
         setInventory(prevInventory => {
             const newInventory = prevInventory.map(ing => ({ ...ing }));
             for (const [ingName, requiredQty] of requiredIngredients.entries()) {
@@ -375,7 +372,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
             return newInventory;
         });
-
         setOrders(prev => [...prev, newOrder]);
         setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } : t));
     }
@@ -390,19 +386,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (isCloudMode && db) {
         const batch = writeBatch(db!);
         batch.update(doc(db!, 'orders', orderId), updates);
-
         if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
             const order = orders.find(o => o.id === orderId);
             const targetTableId = order?.tableId;
-            
-            // Clear table
             if (targetTableId) {
                 batch.update(doc(db!, 'tables', targetTableId), { status: TableStatus.AVAILABLE, currentOrderId: null });
             } 
-             
-            // Refund Logic
             if (status === OrderStatus.CANCELLED && order) {
-                 // Add stock back (Simplified for prototype: Reads current state again)
                  order.items.forEach(item => {
                     const m = menu.find(x => x.id === item.menuItemId);
                     if(m && m.dailyStock !== -1) {
@@ -418,26 +408,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
         }
         await batch.commit();
-
     } else {
-        // LOCAL LOGIC
         setOrders(prev => prev.map(o => {
             if (o.id !== orderId) return o;
             return { ...o, ...updates };
         }));
-
         if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
             const order = orders.find(o => o.id === orderId);
             const targetTableId = order?.tableId;
-
             if (targetTableId) {
                 setTables(prev => prev.map(t => t.id === targetTableId ? { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined } : t));
             } else {
                 setTables(prev => prev.map(t => t.currentOrderId === orderId ? { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined } : t));
             }
-
             if (status === OrderStatus.CANCELLED && order) {
-                 // Simplified local refund logic
                  setMenu(prevMenu => prevMenu.map(m => {
                     const orderItem = order.items.find(i => i.menuItemId === m.id);
                     if (orderItem && m.dailyStock !== -1) return { ...m, dailyStock: m.dailyStock + orderItem.quantity };
@@ -521,15 +505,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (!currentUser) return;
     const targetUser = staffList.find(u => u.id === userId);
     if (!targetUser) return;
-    
-    // Permission check
     const protectedPositions = ['Admin', 'Co-CEO'];
     const lowerAdmins = ['CEO', 'Manager'];
     if (lowerAdmins.includes(currentUser.position) && protectedPositions.includes(targetUser.position)) {
         alert(`ไม่อนุญาต: ระดับ ${currentUser.position} ไม่สามารถลบบัญชีระดับ ${targetUser.position} ได้`);
         return;
     }
-
     if (isCloudMode && db) {
         await updateDoc(doc(db!, 'staff', userId), { isActive: false, endDate: new Date().toISOString().split('T')[0] });
     } else {
