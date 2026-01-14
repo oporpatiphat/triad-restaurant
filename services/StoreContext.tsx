@@ -135,9 +135,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
       // 1. Identify which tables SHOULD be occupied based on active orders
       const activeOrderMap = new Map<string, Order>(); // tableId -> Order
-      orders.forEach(o => {
-        if (o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED) {
-           activeOrderMap.set(o.tableId, o);
+      
+      // Sort orders by timestamp (newest first) to ensure we get the latest active order for a table
+      const sortedOrders = [...orders].sort((a,b) => b.timestamp.getTime() - a.timestamp.getTime());
+      
+      sortedOrders.forEach(o => {
+        if (o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED && o.status !== OrderStatus.SERVED) {
+           // If table not already mapped (since we sort newest first, we take the latest active one)
+           if (!activeOrderMap.has(o.tableId)) {
+               activeOrderMap.set(o.tableId, o);
+           }
         }
       });
 
@@ -148,28 +155,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
          if (activeOrder) {
             // Case A: Table should be occupied but is marked available (or wrong order linked)
+            // This ensures if there IS an order, the table IS occupied.
             if (table.status === TableStatus.AVAILABLE || table.currentOrderId !== activeOrder.id) {
                newTables[i] = { 
                  ...table, 
-                 status: activeOrder.status === OrderStatus.WAITING_PAYMENT ? TableStatus.OCCUPIED : TableStatus.OCCUPIED, 
+                 status: TableStatus.OCCUPIED, 
                  currentOrderId: activeOrder.id 
                };
                hasChanges = true;
             }
-         } else {
-            // Case B: Table thinks it has an order, but that order doesn't exist/is closed in 'orders' list
-            if (table.status === TableStatus.OCCUPIED && table.currentOrderId && !orders.find(o => o.id === table.currentOrderId)) {
-                // Only free the table if the order ID is completely missing from our knowledge base (orphaned)
-                // If the order exists but is COMPLETED, the createOrder/updateOrder logic usually handles it.
-                // This is just a fallback for "phantom" locks.
-                newTables[i] = {
-                    ...table,
-                    status: TableStatus.AVAILABLE,
-                    currentOrderId: undefined
-                };
-                hasChanges = true;
-            }
-         }
+         } 
+         // REMOVED Case B (Aggressive Reset): 
+         // Previously we checked if table was OCCUPIED but order was missing, then reset to AVAILABLE.
+         // This caused race conditions where the table updated before the order list, causing the table to reset.
+         // We now rely on 'updateOrderStatus' (Complete/Cancel) to explicitly free the table.
       }
 
       return hasChanges ? newTables : currentTables;
@@ -465,8 +464,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             }
             return newInventory;
         });
+        
+        // UPDATE BOTH STATES SYNCHRONOUSLY
         setOrders(prev => [...prev, newOrder]);
-        // Note: Table status update is also handled by the new useEffect, but explicit update here is safer for immediate feedback
         setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } : t));
     }
   };
