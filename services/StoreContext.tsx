@@ -97,8 +97,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (isCloudMode) return generateTables();
     try {
       const saved = localStorage.getItem(KEYS.TABLES);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // SAFETY CHECK: If array is empty, force regenerate default tables
+        if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+        }
+      }
     } catch(e) {}
+    // If we reach here, either no save or empty save. Force Generate.
     return generateTables();
   });
 
@@ -177,8 +184,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const unsubTables = onSnapshot(collection(db!, 'tables'), (snap) => {
         const data = snap.docs.map(processDoc) as Table[];
-        // Sort by ID naturally
-        setTables(data.sort((a,b) => parseInt(a.id.slice(1)) - parseInt(b.id.slice(1))));
+        // If Cloud DB is empty, don't override with empty array immediately to avoid UI glitch
+        // But for consistency, if it's truly empty, we might need an admin init script.
+        if (data.length > 0) {
+           setTables(data.sort((a,b) => parseInt(a.id.slice(1)) - parseInt(b.id.slice(1))));
+        }
     });
 
     const unsubOrders = onSnapshot(query(collection(db!, 'orders'), orderBy('timestamp', 'asc')), (snap) => {
@@ -220,7 +230,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [storeSession, isCloudMode]);
 
   useEffect(() => {
-    if (!isCloudMode) localStorage.setItem(KEYS.TABLES, JSON.stringify(tables));
+    // IMPORTANT: Only save if we actually have tables. 
+    // This prevents overwriting valid data with an empty array if something goes wrong.
+    if (!isCloudMode && tables.length > 0) {
+        localStorage.setItem(KEYS.TABLES, JSON.stringify(tables));
+    }
   }, [tables, isCloudMode]);
 
   useEffect(() => {

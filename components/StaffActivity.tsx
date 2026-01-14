@@ -2,9 +2,11 @@ import React from 'react';
 import { useStore } from '../services/StoreContext';
 import { Activity, User as UserIcon, ChefHat, Utensils, CheckCircle, Clock } from 'lucide-react';
 import { OrderStatus, User } from '../types';
+import { useNavigate } from 'react-router-dom';
 
 const StaffCard: React.FC<{ staff: User }> = ({ staff }) => {
   const { orders, tables } = useStore();
+  const navigate = useNavigate();
 
   const getTableNumber = (tableId: string) => tables.find(t => t.id === tableId)?.number || '??';
 
@@ -38,8 +40,17 @@ const StaffCard: React.FC<{ staff: User }> = ({ staff }) => {
   const isManagement = ['Admin', 'Co-CEO', 'CEO', 'Manager'].includes(staff.position);
   const avatarColor = isManagement ? 'bg-purple-500' : 'bg-indigo-500';
 
+  const handleClick = () => {
+    if (status === 'BUSY') {
+        navigate('/kitchen');
+    }
+  };
+
   return (
-    <div className={`bg-white p-5 rounded-xl border shadow-sm transition-all hover:shadow-md ${status === 'BUSY' ? 'border-stone-300' : 'border-stone-200'}`}>
+    <div 
+        onClick={handleClick}
+        className={`bg-white p-5 rounded-xl border shadow-sm transition-all hover:shadow-md ${status === 'BUSY' ? 'border-stone-300 cursor-pointer hover:border-red-300 hover:ring-1 hover:ring-red-100' : 'border-stone-200'}`}
+    >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg text-white shadow-sm ${avatarColor}`}>
