@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus, Activity, Database, RefreshCw, AlertTriangle, CloudOff } from 'lucide-react';
+import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus, Activity, RefreshCw, AlertTriangle, CloudOff } from 'lucide-react';
 import { OrderStatus, TableStatus } from '../types';
 
 export const AdminDashboard: React.FC = () => {
