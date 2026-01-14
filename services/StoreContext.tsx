@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem } from '../types';
 import { generateTables, INITIAL_INGREDIENTS, INITIAL_MENU, MOCK_USERS, INITIAL_POSITIONS } from '../constants';
-import { db, isCloudEnabled } from './firebaseConfig.ts';
+import { db, isCloudEnabled } from './firebaseConfig';
 import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, writeBatch, Timestamp, query, orderBy } from 'firebase/firestore';
 
 interface StoreContextType {
@@ -152,35 +152,36 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return { id: docSnap.id, ...data };
     };
 
-    const unsubSession = onSnapshot(doc(db, 'config', 'session'), (doc) => {
+    // Use db! here because isCloudMode check implies db is present
+    const unsubSession = onSnapshot(doc(db!, 'config', 'session'), (doc) => {
         if (doc.exists()) {
             setStoreSession(processDoc(doc) as StoreSession);
         }
     });
 
-    const unsubTables = onSnapshot(collection(db, 'tables'), (snap) => {
+    const unsubTables = onSnapshot(collection(db!, 'tables'), (snap) => {
         const data = snap.docs.map(processDoc) as Table[];
         // Sort by ID naturally
         setTables(data.sort((a,b) => parseInt(a.id.slice(1)) - parseInt(b.id.slice(1))));
     });
 
-    const unsubOrders = onSnapshot(query(collection(db, 'orders'), orderBy('timestamp', 'asc')), (snap) => {
+    const unsubOrders = onSnapshot(query(collection(db!, 'orders'), orderBy('timestamp', 'asc')), (snap) => {
         setOrders(snap.docs.map(processDoc) as Order[]);
     });
 
-    const unsubMenu = onSnapshot(collection(db, 'menu'), (snap) => {
+    const unsubMenu = onSnapshot(collection(db!, 'menu'), (snap) => {
         setMenu(snap.docs.map(processDoc) as MenuItem[]);
     });
 
-    const unsubInventory = onSnapshot(collection(db, 'inventory'), (snap) => {
+    const unsubInventory = onSnapshot(collection(db!, 'inventory'), (snap) => {
         setInventory(snap.docs.map(processDoc) as Ingredient[]);
     });
 
-    const unsubStaff = onSnapshot(collection(db, 'staff'), (snap) => {
+    const unsubStaff = onSnapshot(collection(db!, 'staff'), (snap) => {
         setStaffList(snap.docs.map(processDoc) as User[]);
     });
 
-    const unsubPositions = onSnapshot(doc(db, 'config', 'positions'), (doc) => {
+    const unsubPositions = onSnapshot(doc(db!, 'config', 'positions'), (doc) => {
         if (doc.exists()) {
             setAvailablePositions(doc.data().list);
         }
@@ -258,12 +259,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const openStore = async (dailyMenuUpdates: MenuItem[]) => {
     if (isCloudMode && db) {
-       const batch = writeBatch(db);
+       const batch = writeBatch(db!);
        // Update Session
-       batch.set(doc(db, 'config', 'session'), { isOpen: true, openedAt: new Date() });
+       batch.set(doc(db!, 'config', 'session'), { isOpen: true, openedAt: new Date() });
        // Update Menu Stock
        dailyMenuUpdates.forEach(m => {
-          batch.update(doc(db, 'menu', m.id), { dailyStock: m.dailyStock, isAvailable: m.isAvailable });
+          batch.update(doc(db!, 'menu', m.id), { dailyStock: m.dailyStock, isAvailable: m.isAvailable });
        });
        await batch.commit();
     } else {
@@ -274,7 +275,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const closeStore = async () => {
     if (isCloudMode && db) {
-        await updateDoc(doc(db, 'config', 'session'), { isOpen: false, closedAt: new Date() });
+        await updateDoc(doc(db!, 'config', 'session'), { isOpen: false, closedAt: new Date() });
     } else {
         setStoreSession(prev => ({ ...prev, isOpen: false, closedAt: new Date() }));
     }
@@ -282,7 +283,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const updateTableStatus = async (tableId: string, status: TableStatus) => {
     if (isCloudMode && db) {
-        await updateDoc(doc(db, 'tables', tableId), { status });
+        await updateDoc(doc(db!, 'tables', tableId), { status });
     } else {
         setTables(prev => prev.map(t => t.id === tableId ? { ...t, status } : t));
     }
@@ -329,20 +330,20 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     if (isCloudMode && db) {
-        const batch = writeBatch(db);
+        const batch = writeBatch(db!);
         
         // 1. Create Order
-        batch.set(doc(db, 'orders', newOrder.id), newOrder);
+        batch.set(doc(db!, 'orders', newOrder.id), newOrder);
         
         // 2. Update Table
-        batch.update(doc(db, 'tables', tableId), { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
+        batch.update(doc(db!, 'tables', tableId), { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
 
         // 3. Deduct Menu Stock
         items.forEach(orderItem => {
             const menuItem = menu.find(m => m.id === orderItem.menuItemId);
             if (menuItem && menuItem.dailyStock !== -1) {
                 const newStock = Math.max(0, menuItem.dailyStock - orderItem.quantity);
-                batch.update(doc(db, 'menu', menuItem.id), { dailyStock: newStock });
+                batch.update(doc(db!, 'menu', menuItem.id), { dailyStock: newStock });
             }
         });
 
@@ -350,7 +351,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         for (const [ingName, requiredQty] of requiredIngredients.entries()) {
             const stockItem = inventory.find(i => i.name === ingName);
             if (stockItem) {
-                batch.update(doc(db, 'inventory', stockItem.id), { quantity: Math.max(0, stockItem.quantity - requiredQty) });
+                batch.update(doc(db!, 'inventory', stockItem.id), { quantity: Math.max(0, stockItem.quantity - requiredQty) });
             }
         }
 
@@ -387,8 +388,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (status === OrderStatus.COMPLETED && paymentMethod) updates.paymentMethod = paymentMethod;
 
     if (isCloudMode && db) {
-        const batch = writeBatch(db);
-        batch.update(doc(db, 'orders', orderId), updates);
+        const batch = writeBatch(db!);
+        batch.update(doc(db!, 'orders', orderId), updates);
 
         if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
             const order = orders.find(o => o.id === orderId);
@@ -396,8 +397,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             
             // Clear table
             if (targetTableId) {
-                batch.update(doc(db, 'tables', targetTableId), { status: TableStatus.AVAILABLE, currentOrderId: null });
-            } // Note: Firestore `null` vs `undefined`. Using null for delete field usually involves FieldValue.delete(), but here setting to null is fine for logic.
+                batch.update(doc(db!, 'tables', targetTableId), { status: TableStatus.AVAILABLE, currentOrderId: null });
+            } 
              
             // Refund Logic
             if (status === OrderStatus.CANCELLED && order) {
@@ -405,12 +406,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                  order.items.forEach(item => {
                     const m = menu.find(x => x.id === item.menuItemId);
                     if(m && m.dailyStock !== -1) {
-                        batch.update(doc(db, 'menu', m.id), { dailyStock: m.dailyStock + item.quantity });
+                        batch.update(doc(db!, 'menu', m.id), { dailyStock: m.dailyStock + item.quantity });
                     }
                     if (m && m.ingredients) {
                         m.ingredients.forEach(ingName => {
                             const inv = inventory.find(i => i.name === ingName);
-                            if(inv) batch.update(doc(db, 'inventory', inv.id), { quantity: inv.quantity + item.quantity });
+                            if(inv) batch.update(doc(db!, 'inventory', inv.id), { quantity: inv.quantity + item.quantity });
                         });
                     }
                  });
@@ -442,7 +443,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     if (orderItem && m.dailyStock !== -1) return { ...m, dailyStock: m.dailyStock + orderItem.quantity };
                     return m;
                  }));
-                 // ... inventory refund (omitted for brevity as it follows same pattern) ...
             }
         }
     }
@@ -450,7 +450,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const addMenuItem = async (item: MenuItem) => {
     if (isCloudMode && db) {
-        await setDoc(doc(db, 'menu', item.id), item);
+        await setDoc(doc(db!, 'menu', item.id), item);
     } else {
         setMenu(prev => [...prev, item]);
     }
@@ -459,7 +459,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const toggleMenuAvailability = async (itemId: string) => {
     if (isCloudMode && db) {
         const item = menu.find(m => m.id === itemId);
-        if (item) await updateDoc(doc(db, 'menu', itemId), { isAvailable: !item.isAvailable });
+        if (item) await updateDoc(doc(db!, 'menu', itemId), { isAvailable: !item.isAvailable });
     } else {
         setMenu(prev => prev.map(item => item.id === itemId ? { ...item, isAvailable: !item.isAvailable } : item));
     }
@@ -467,7 +467,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   
   const updateMenuStock = async (itemId: string, quantity: number) => {
     if (isCloudMode && db) {
-        await updateDoc(doc(db, 'menu', itemId), { dailyStock: quantity });
+        await updateDoc(doc(db!, 'menu', itemId), { dailyStock: quantity });
     } else {
         setMenu(prev => prev.map(item => item.id === itemId ? { ...item, dailyStock: quantity } : item));
     }
@@ -476,7 +476,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const updateIngredientQuantity = async (itemId: string, delta: number) => {
     if (isCloudMode && db) {
         const item = inventory.find(i => i.id === itemId);
-        if(item) await updateDoc(doc(db, 'inventory', itemId), { quantity: Math.max(0, item.quantity + delta) });
+        if(item) await updateDoc(doc(db!, 'inventory', itemId), { quantity: Math.max(0, item.quantity + delta) });
     } else {
         setInventory(prev => prev.map(item => {
             if (item.id === itemId) return { ...item, quantity: Math.max(0, item.quantity + delta) };
@@ -487,7 +487,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const addIngredient = async (ingredient: Ingredient) => {
     if (isCloudMode && db) {
-        await setDoc(doc(db, 'inventory', ingredient.id), ingredient);
+        await setDoc(doc(db!, 'inventory', ingredient.id), ingredient);
     } else {
         setInventory(prev => [...prev, ingredient]);
     }
@@ -495,7 +495,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const removeIngredient = async (id: string) => {
     if (isCloudMode && db) {
-        await deleteDoc(doc(db, 'inventory', id));
+        await deleteDoc(doc(db!, 'inventory', id));
     } else {
         setInventory(prev => prev.filter(item => item.id !== id));
     }
@@ -503,7 +503,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const addStaff = async (user: User) => {
     if (isCloudMode && db) {
-        await setDoc(doc(db, 'staff', user.id), user);
+        await setDoc(doc(db!, 'staff', user.id), user);
     } else {
         setStaffList(prev => [...prev, user]);
     }
@@ -511,7 +511,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const updateStaff = async (user: User) => {
     if (isCloudMode && db) {
-        await setDoc(doc(db, 'staff', user.id), user);
+        await setDoc(doc(db!, 'staff', user.id), user);
     } else {
         setStaffList(prev => prev.map(u => u.id === user.id ? user : u));
     }
@@ -531,7 +531,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
 
     if (isCloudMode && db) {
-        await updateDoc(doc(db, 'staff', userId), { isActive: false, endDate: new Date().toISOString().split('T')[0] });
+        await updateDoc(doc(db!, 'staff', userId), { isActive: false, endDate: new Date().toISOString().split('T')[0] });
     } else {
         setStaffList(prev => prev.map(u => {
             if (u.id === userId) return { ...u, isActive: false, endDate: new Date().toISOString().split('T')[0] };
@@ -543,7 +543,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const addPosition = async (position: string) => {
     if (availablePositions.includes(position)) return;
     if (isCloudMode && db) {
-        await setDoc(doc(db, 'config', 'positions'), { list: [...availablePositions, position] });
+        await setDoc(doc(db!, 'config', 'positions'), { list: [...availablePositions, position] });
     } else {
         setAvailablePositions(prev => [...prev, position]);
     }
@@ -552,7 +552,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const removePosition = async (position: string) => {
     const newList = availablePositions.filter(p => p !== position);
     if (isCloudMode && db) {
-        await setDoc(doc(db, 'config', 'positions'), { list: newList });
+        await setDoc(doc(db!, 'config', 'positions'), { list: newList });
     } else {
         setAvailablePositions(newList);
     }
@@ -569,7 +569,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     [newPositions[index], newPositions[swapIndex]] = [newPositions[swapIndex], newPositions[index]];
 
     if (isCloudMode && db) {
-        await setDoc(doc(db, 'config', 'positions'), { list: newPositions });
+        await setDoc(doc(db!, 'config', 'positions'), { list: newPositions });
     } else {
         setAvailablePositions(newPositions);
     }
