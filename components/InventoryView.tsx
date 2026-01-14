@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Refrigerator, AlertTriangle, Minus, Plus, PlusCircle, X, Save, Trash2, Eye, Package, Layers, CheckCircle } from 'lucide-react';
+import { Refrigerator, AlertTriangle, Minus, Plus, PlusCircle, X, Save, Trash2, Eye, Package, Layers, CheckCircle, RotateCcw, Edit3 } from 'lucide-react';
 import { Ingredient, IngredientCategory, Role } from '../types';
 
 export const InventoryView: React.FC = () => {
   const { inventory, updateIngredientQuantity, addIngredient, removeIngredient, currentUser } = useStore();
+  
+  // --- STATE ---
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   
+  // Draft State: Stores changes before saving { [itemId]: newQuantity }
+  const [pendingChanges, setPendingChanges] = useState<Record<string, number>>({});
+
   const [newIngredient, setNewIngredient] = useState<Partial<Ingredient>>({
     name: '',
     category: 'ของแห้ง/อื่นๆ',
@@ -17,8 +22,9 @@ export const InventoryView: React.FC = () => {
   });
 
   const canEdit = currentUser?.role === Role.OWNER;
-
   const categories: IngredientCategory[] = ['เนื้อสัตว์', 'ผัก', 'ไวน์', 'ของแห้ง/อื่นๆ'];
+
+  // --- HELPERS ---
 
   const getCategoryIcon = (cat: IngredientCategory) => {
     switch (cat) {
@@ -28,6 +34,67 @@ export const InventoryView: React.FC = () => {
         default: return '📦';
     }
   }
+
+  // Get value to display (Draft or Real)
+  const getDisplayQuantity = (item: Ingredient): number => {
+    const draftVal = pendingChanges[item.id];
+    return draftVal !== undefined ? draftVal : item.quantity;
+  };
+
+  // Check if item is modified
+  const isModified = (item: Ingredient) => {
+    const draftVal = pendingChanges[item.id];
+    return draftVal !== undefined && draftVal !== item.quantity;
+  };
+
+  const hasAnyChanges = Object.keys(pendingChanges).length > 0;
+
+  // --- ACTIONS ---
+
+  const handleDraftChange = (itemId: string, newQty: number) => {
+    const safeQty = Math.max(0, newQty);
+    const originalItem = inventory.find(i => i.id === itemId);
+    
+    // If matches original, remove from pending
+    if (originalItem && originalItem.quantity === safeQty) {
+        const next = { ...pendingChanges };
+        delete next[itemId];
+        setPendingChanges(next);
+    } else {
+        setPendingChanges(prev => ({ ...prev, [itemId]: safeQty }));
+    }
+  };
+
+  const handleDeltaChange = (itemId: string, delta: number) => {
+    const originalItem = inventory.find(i => i.id === itemId);
+    if (!originalItem) return;
+    
+    const currentDisplay = getDisplayQuantity(originalItem);
+    handleDraftChange(itemId, currentDisplay + delta);
+  };
+
+  const handleSaveChanges = async () => {
+    // Process all pending changes
+    for (const [id, newQty] of Object.entries(pendingChanges)) {
+        const originalItem = inventory.find(i => i.id === id);
+        if (originalItem) {
+            const delta = newQty - originalItem.quantity;
+            if (delta !== 0) {
+                // We use existing context function which takes delta
+                await updateIngredientQuantity(id, delta);
+            }
+        }
+    }
+    setPendingChanges({}); // Clear drafts
+    setShowSaveSuccess(true);
+    setTimeout(() => setShowSaveSuccess(false), 2000);
+  };
+
+  const handleCancelChanges = () => {
+    if (confirm("คุณต้องการยกเลิกการแก้ไขทั้งหมดใช่หรือไม่? ค่าจะกลับไปเป็นล่าสุด")) {
+        setPendingChanges({});
+    }
+  };
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,55 +123,50 @@ export const InventoryView: React.FC = () => {
   const handleRemove = (item: Ingredient) => {
     if (confirm(`คุณแน่ใจหรือไม่ที่จะลบวัตถุดิบ "${item.name}"?`)) {
       removeIngredient(item.id);
+      // Also remove from pending if exists
+      if (pendingChanges[item.id]) {
+          const next = { ...pendingChanges };
+          delete next[item.id];
+          setPendingChanges(next);
+      }
     }
   };
 
-  const handleManualSave = () => {
-    // Since state updates immediately in this architecture, this button serves as a confirmation/checkpoint for the user
-    setShowSaveSuccess(true);
-    setTimeout(() => setShowSaveSuccess(false), 2000);
-  };
-
-  // Stats Calculation
+  // Stats Calculation (Based on Real Data, not Draft)
   const totalItems = inventory.length;
   const totalQuantity = inventory.reduce((sum, item) => sum + item.quantity, 0);
-  const lowStockItems = inventory.filter(i => i.quantity <= 5).length; // Assuming 5 is low for stats
+  const lowStockItems = inventory.filter(i => i.quantity <= 5).length;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
       {/* Header & Stats Dashboard */}
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex justify-between items-start mb-6">
             <div>
-            <h2 className="text-3xl font-bold text-stone-800 flex items-center gap-2">
-                <Refrigerator className="text-red-600" /> ตู้เย็น / คลังวัตถุดิบ (Stock)
-            </h2>
-            {!canEdit && (
-                <div className="text-sm text-stone-500 flex items-center gap-1 mt-1">
-                <Eye size={14} /> Read-Only Mode (คุณดูข้อมูลได้อย่างเดียว)
-                </div>
-            )}
+                <h2 className="text-3xl font-bold text-stone-800 flex items-center gap-2">
+                    <Refrigerator className="text-red-600" /> ตู้เย็น / คลังวัตถุดิบ (Stock)
+                </h2>
+                {!canEdit ? (
+                    <div className="text-sm text-stone-500 flex items-center gap-1 mt-1">
+                        <Eye size={14} /> Read-Only Mode (คุณดูข้อมูลได้อย่างเดียว)
+                    </div>
+                ) : (
+                    <div className="text-sm text-stone-500 flex items-center gap-1 mt-1">
+                        <Edit3 size={14} /> Edit Mode: แก้ไขตัวเลขและกดบันทึกเพื่อยืนยัน
+                    </div>
+                )}
             </div>
             {canEdit && (
-            <div className="flex gap-3">
-                 <button 
-                    onClick={handleManualSave}
-                    className="bg-stone-800 hover:bg-black text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-stone-800/20 transition-all active:scale-95"
-                >
-                    {showSaveSuccess ? <CheckCircle size={20} className="text-green-400" /> : <Save size={20} />}
-                    {showSaveSuccess ? 'บันทึกเรียบร้อย' : 'บันทึกข้อมูล'}
-                </button>
                 <button 
                     onClick={() => setShowAddModal(true)}
                     className="bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-red-600/20 transition-all hover:-translate-y-0.5"
                 >
                     <PlusCircle size={20} /> เพิ่มวัตถุดิบใหม่
                 </button>
-            </div>
             )}
         </div>
 
-        {/* Dashboard Cards to fill space */}
+        {/* Dashboard Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white p-4 rounded-xl shadow-sm border border-stone-200 flex items-center gap-4">
                <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
@@ -137,7 +199,7 @@ export const InventoryView: React.FC = () => {
       </div>
 
       {/* Main Grid Content */}
-      <div className="flex-1 overflow-y-auto space-y-8 pb-10 pr-2">
+      <div className="flex-1 overflow-y-auto space-y-8 pb-24 pr-2">
         {categories.map(category => {
           const items = inventory.filter(i => i.category === category);
           
@@ -156,10 +218,12 @@ export const InventoryView: React.FC = () => {
                ) : (
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {items.map(item => {
-                        const isLow = item.quantity <= 5;
+                        const modified = isModified(item);
+                        const displayQty = getDisplayQuantity(item);
+                        const isLow = displayQty <= 5;
                         
                         return (
-                           <div key={item.id} className={`group bg-white rounded-xl p-4 border transition-all hover:shadow-lg relative overflow-hidden ${isLow ? 'border-red-300 shadow-red-100' : 'border-stone-200 shadow-sm'}`}>
+                           <div key={item.id} className={`group bg-white rounded-xl p-4 border transition-all relative overflow-hidden ${modified ? 'border-blue-400 shadow-md ring-1 ring-blue-100' : isLow ? 'border-red-300 shadow-red-100' : 'border-stone-200 shadow-sm'}`}>
                               {/* Background Icon Watermark */}
                               <div className="absolute -bottom-4 -right-4 text-8xl opacity-[0.03] pointer-events-none select-none grayscale">
                                  {getCategoryIcon(category)}
@@ -169,40 +233,52 @@ export const InventoryView: React.FC = () => {
                                  <div>
                                     <div className="flex items-center gap-2">
                                        <span className="text-2xl">{getCategoryIcon(category)}</span>
-                                       <div className="font-bold text-stone-800 text-lg line-clamp-1">{item.name}</div>
+                                       <div className={`font-bold text-lg line-clamp-1 ${modified ? 'text-blue-700' : 'text-stone-800'}`}>{item.name}</div>
                                     </div>
                                     <div className="text-xs text-stone-400 mt-1 pl-1">ID: {item.id}</div>
                                  </div>
-                                 {isLow && (
+                                 {modified ? (
+                                     <div className="absolute top-0 right-0 bg-blue-100 text-blue-600 px-2 py-1 rounded-bl-lg shadow-sm text-[10px] font-bold">
+                                         Edited
+                                     </div>
+                                 ) : isLow && (
                                      <div className="absolute top-0 right-0 bg-red-100 text-red-600 p-1.5 rounded-bl-lg shadow-sm">
                                          <AlertTriangle size={16} />
                                      </div>
                                  )}
                               </div>
 
-                              <div className="bg-stone-50 rounded-lg p-3 border border-stone-100 relative z-10">
+                              <div className={`rounded-lg p-2 border relative z-10 ${modified ? 'bg-blue-50 border-blue-200' : 'bg-stone-50 border-stone-100'}`}>
                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs text-stone-500 font-bold uppercase">Quantity</span>
-                                    <span className="text-xs text-stone-400">{item.unit}</span>
+                                    <span className={`text-xs font-bold uppercase ${modified ? 'text-blue-500' : 'text-stone-500'}`}>Quantity ({item.unit})</span>
                                  </div>
-                                 <div className="flex items-center justify-between gap-2">
+                                 <div className="flex items-center justify-between gap-1">
                                      {canEdit && (
                                          <button 
-                                           onClick={() => updateIngredientQuantity(item.id, -1)}
-                                           className="w-8 h-8 flex items-center justify-center bg-white border border-stone-200 rounded text-stone-500 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                           onClick={() => handleDeltaChange(item.id, -1)}
+                                           className="w-8 h-8 flex items-center justify-center bg-white border border-stone-200 rounded text-stone-500 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm active:bg-stone-200"
                                          >
                                             <Minus size={16} />
                                          </button>
                                      )}
                                      
-                                     <div className={`flex-1 text-center font-bold text-2xl ${isLow ? 'text-red-600' : 'text-stone-800'}`}>
-                                         {item.quantity}
-                                     </div>
+                                     {canEdit ? (
+                                         <input 
+                                            type="number"
+                                            value={displayQty}
+                                            onChange={(e) => handleDraftChange(item.id, parseInt(e.target.value) || 0)}
+                                            className={`flex-1 w-full text-center font-bold text-2xl bg-transparent outline-none no-spinner focus:border-b-2 ${modified ? 'text-blue-700 focus:border-blue-500' : isLow ? 'text-red-600 focus:border-red-500' : 'text-stone-800 focus:border-stone-400'}`}
+                                         />
+                                     ) : (
+                                         <div className={`flex-1 text-center font-bold text-2xl ${isLow ? 'text-red-600' : 'text-stone-800'}`}>
+                                            {displayQty}
+                                         </div>
+                                     )}
 
                                      {canEdit && (
                                          <button 
-                                           onClick={() => updateIngredientQuantity(item.id, 1)}
-                                           className="w-8 h-8 flex items-center justify-center bg-white border border-stone-200 rounded text-stone-500 hover:text-green-500 hover:bg-green-50 transition-colors"
+                                           onClick={() => handleDeltaChange(item.id, 1)}
+                                           className="w-8 h-8 flex items-center justify-center bg-white border border-stone-200 rounded text-stone-500 hover:text-green-500 hover:bg-green-50 transition-colors shadow-sm active:bg-stone-200"
                                          >
                                             <Plus size={16} />
                                          </button>
@@ -213,13 +289,13 @@ export const InventoryView: React.FC = () => {
                               {canEdit && (
                                  <div className="mt-3 flex gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200 relative z-10">
                                     <button 
-                                      onClick={() => updateIngredientQuantity(item.id, 5)}
+                                      onClick={() => handleDeltaChange(item.id, 5)}
                                       className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-600 text-xs font-bold py-1.5 rounded border border-stone-200"
                                     >
                                        +5
                                     </button>
                                     <button 
-                                      onClick={() => updateIngredientQuantity(item.id, 10)}
+                                      onClick={() => handleDeltaChange(item.id, 10)}
                                       className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-600 text-xs font-bold py-1.5 rounded border border-stone-200"
                                     >
                                        +10
@@ -241,6 +317,42 @@ export const InventoryView: React.FC = () => {
           );
         })}
       </div>
+
+      {/* UNSAVED CHANGES BAR */}
+      <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-stone-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-40 transition-all duration-300 border border-stone-700 ${hasAnyChanges ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0 pointer-events-none'}`}>
+          <div className="flex flex-col">
+              <span className="font-bold text-lg flex items-center gap-2">
+                 <Edit3 size={18} className="text-blue-400" />
+                 มีการแก้ไข {Object.keys(pendingChanges).length} รายการ
+              </span>
+              <span className="text-xs text-stone-400">กรุณากดบันทึกเพื่อยืนยันข้อมูลลงระบบ</span>
+          </div>
+          <div className="flex gap-3 h-10">
+              <button 
+                onClick={handleCancelChanges}
+                className="px-4 h-full rounded-lg font-bold text-stone-400 hover:bg-white/10 hover:text-white transition-colors flex items-center gap-2"
+              >
+                 <RotateCcw size={16} /> ยกเลิก
+              </button>
+              <button 
+                onClick={handleSaveChanges}
+                className="px-6 h-full bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold shadow-lg shadow-blue-900/50 flex items-center gap-2 transition-transform active:scale-95"
+              >
+                 <Save size={18} /> บันทึกการแก้ไข
+              </button>
+          </div>
+      </div>
+
+      {/* SUCCESS TOAST */}
+      {showSaveSuccess && (
+         <div className="fixed top-20 right-10 z-50 bg-green-600 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-right fade-in duration-300">
+            <CheckCircle size={24} />
+            <div>
+               <div className="font-bold">บันทึกเรียบร้อย</div>
+               <div className="text-xs text-green-100">อัปเดตสต็อกเข้าสู่ระบบแล้ว</div>
+            </div>
+         </div>
+      )}
 
       {/* Add Ingredient Modal */}
       {showAddModal && canEdit && (
