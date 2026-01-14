@@ -1,16 +1,12 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-// --- วิธีการตั้งค่า Firebase (ฟรี) ---
+// --- ส่วนสำคัญ: การตั้งค่า Firebase (Cloud Database) ---
 // 1. ไปที่ https://console.firebase.google.com/
-// 2. สร้างโปรเจกต์ใหม่ (Create Project)
-// 3. สร้าง Web App (ไอคอน </>)
-// 4. ก๊อปปี้ค่าใน const firebaseConfig มาวางทับด้านล่างนี้
-// 5. อย่าลืมไปกดสร้าง Database ที่เมนู "Firestore Database" และเลือก "Start in Test Mode"
+// 2. สร้างโปรเจกต์ใหม่ -> เลือก "Web" (ไอคอน </>)
+// 3. ก๊อปปี้ค่า config มาแทนที่ด้านล่างนี้
+// 4. ไปที่เมนู Firestore Database -> Create Database -> เลือก Start in Test Mode (เพื่อให้เขียนข้อมูลได้โดยไม่ต้องแก้ Rules ในช่วงแรก)
 
-// ---------------------------------------------------------
-// พื้นที่สำหรับวาง Config (ลบของเก่าแล้ววางของใหม่ทับได้เลย)
-// ---------------------------------------------------------
 const firebaseConfig = {
 
   apiKey: "AIzaSyCH0wII5jAtv9G2uJhlcpZ6kf4JupscyaA",
@@ -26,11 +22,11 @@ const firebaseConfig = {
   appId: "1:741573397234:web:591abb7b6a2fd7f0a85e6b"
 
 };
-// ---------------------------------------------------------
 
-// ระบบตรวจสอบว่าใส่ Key หรือยัง
+// ตรวจสอบว่าได้ใส่ Key จริงหรือยัง (ถ้ายังเป็น YOUR_API_KEY_HERE ถือว่ายังไม่พร้อม)
 const isConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY_HERE";
 
+// Initialize Firebase
 const app = isConfigured ? initializeApp(firebaseConfig) : null;
 export const db = app ? getFirestore(app) : null;
 export const isCloudEnabled = isConfigured;

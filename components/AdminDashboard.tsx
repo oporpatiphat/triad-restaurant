@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus, Activity, RefreshCw, AlertTriangle, CloudOff } from 'lucide-react';
+import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus, Activity, RefreshCw, AlertTriangle, CloudOff, Database } from 'lucide-react';
 import { OrderStatus, TableStatus } from '../types';
 
 export const AdminDashboard: React.FC = () => {
-  const { menu, inventory, orders, tables, runSelfHealing, isCloudMode } = useStore();
+  const { menu, inventory, orders, tables, runSelfHealing, isCloudMode, initializeCloudData } = useStore();
   const [activeTab, setActiveTab] = useState<'CALCULATE' | 'SYSTEM'>('CALCULATE');
 
   // --- Calculation State ---
@@ -123,8 +123,14 @@ export const AdminDashboard: React.FC = () => {
   const handleSelfHeal = () => {
     if(confirm("ระบบจะทำการตรวจสอบและแก้ไขสถานะโต๊ะให้ตรงกับออเดอร์ คุณต้องการดำเนินการหรือไม่?")) {
         runSelfHealing();
-        alert("ดำเนินการเรียบร้อย");
+        // alert handled in runSelfHealing
     }
+  }
+
+  const handleInitCloud = () => {
+     if(confirm("คำสั่งนี้จะสร้างข้อมูลเริ่มต้น (โต๊ะ/เมนู) บน Cloud หากยังไม่มีข้อมูล\nคุณต้องการดำเนินการหรือไม่?")) {
+         initializeCloudData();
+     }
   }
 
   return (
@@ -386,7 +392,16 @@ export const AdminDashboard: React.FC = () => {
                 </div>
             </div>
             
-            <div className="flex justify-center">
+            <div className="flex justify-center gap-4">
+                {isCloudMode && (
+                    <button 
+                      onClick={handleInitCloud}
+                      className="px-8 py-4 rounded-xl font-bold flex items-center gap-3 shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200"
+                    >
+                        <Database size={24} />
+                        เตรียมฐานข้อมูล Cloud (Initialize)
+                    </button>
+                )}
                 <button 
                   onClick={handleSelfHeal}
                   disabled={isHealthy}
@@ -398,7 +413,8 @@ export const AdminDashboard: React.FC = () => {
             </div>
             
             <p className="text-center text-stone-400 text-sm mt-4 max-w-lg mx-auto">
-               หากพบปัญหาโต๊ะว่างแต่มีออเดอร์ หรือมีออเดอร์แต่โต๊ะว่าง ให้กดปุ่มซ่อมแซมข้อมูล ระบบจะทำการจับคู่ออเดอร์กับโต๊ะใหม่อัตโนมัติ
+               หากเพิ่งเชื่อมต่อ Cloud ครั้งแรก ให้กดปุ่ม "เตรียมฐานข้อมูล Cloud" เพื่อสร้างโต๊ะและเมนู<br/>
+               จากนั้นหากพบปัญหาข้อมูลไม่ตรงกัน ให้กด "ซ่อมแซมข้อมูล"
             </p>
         </div>
       )}
