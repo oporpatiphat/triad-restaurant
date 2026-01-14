@@ -20,16 +20,6 @@ export const InventoryView: React.FC = () => {
 
   const categories: IngredientCategory[] = ['เนื้อสัตว์', 'ผัก', 'ไวน์', 'ของแห้ง/อื่นๆ'];
 
-  const getCategoryColor = (cat: IngredientCategory) => {
-    switch (cat) {
-      case 'เนื้อสัตว์': return 'bg-red-50 border-red-200 text-red-800 ring-red-100';
-      case 'ผัก': return 'bg-green-50 border-green-200 text-green-800 ring-green-100';
-      case 'ไวน์': return 'bg-purple-50 border-purple-200 text-purple-800 ring-purple-100';
-      case 'ของแห้ง/อื่นๆ': return 'bg-amber-50 border-amber-200 text-amber-800 ring-amber-100';
-      default: return 'bg-gray-50';
-    }
-  };
-
   const getCategoryIcon = (cat: IngredientCategory) => {
     switch (cat) {
         case 'เนื้อสัตว์': return '🥩';
