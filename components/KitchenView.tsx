@@ -1,18 +1,19 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
 import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle } from 'lucide-react';
 
-// --- Extract KanbanColumn Component OUTSIDE (Fixes stability issues) ---
-const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, tables }: any) => {
-    // Permission Logic:
-    // Simply check if user is OWNER (Admin/Manager) or STAFF (Employee)
-    // Both roles should be able to operate the KDS (Kitchen Display System)
+// --- KanbanColumn Defined OUTSIDE the main component to prevent re-renders ---
+const KanbanColumn = React.memo(({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, tables }: any) => {
+    
+    // Permission: Owner, Staff, Chef can act
     const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
-
     const isRestricted = !canAct;
 
-    const getTableNumber = (tableId: string) => tables.find((t: any) => t.id === tableId)?.number || '??';
+    const getTableNumber = (tableId: string) => {
+        const t = tables.find((t: any) => t.id === tableId);
+        return t ? t.number : '??';
+    };
     
     return (
       <div className={`flex flex-col h-full bg-white rounded-2xl border shadow-sm overflow-hidden ${isAlert ? 'border-red-500 ring-2 ring-red-100' : 'border-stone-200'}`}>
@@ -69,36 +70,44 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                )}
             </div>
           ))}
+          {items.length === 0 && (
+             <div className="text-center py-10 text-stone-300 text-sm">ไม่มีรายการ</div>
+          )}
         </div>
       </div>
     );
-};
+});
 
 export const KitchenView: React.FC = () => {
   const { orders, updateOrderStatus, tables, currentUser } = useStore();
   
-  // Filter active orders (Excluding completed, cancelled, and waiting payment)
-  const activeOrders = orders.filter(o => 
+  // Filter active orders for KDS
+  const activeOrders = useMemo(() => orders.filter(o => 
     o.status !== OrderStatus.CANCELLED && 
     o.status !== OrderStatus.COMPLETED &&
     o.status !== OrderStatus.WAITING_PAYMENT
-  );
+  ), [orders]);
   
-  const pendingCount = activeOrders.filter(o => o.status === OrderStatus.PENDING).length;
+  const pendingOrders = activeOrders.filter(o => o.status === OrderStatus.PENDING);
+  const cookingOrders = activeOrders.filter(o => o.status === OrderStatus.COOKING);
+  const servingOrders = activeOrders.filter(o => o.status === OrderStatus.SERVING);
 
   return (
     <div className="h-full flex flex-col">
-      <h2 className="text-3xl font-bold text-stone-800 mb-4 flex items-center gap-2">
-        <ChefHat className="text-red-600" /> งานครัวและบริการ (KDS)
-      </h2>
+      <div className="flex justify-between items-center mb-4">
+          <h2 className="text-3xl font-bold text-stone-800 flex items-center gap-2">
+            <ChefHat className="text-red-600" /> งานครัวและบริการ (KDS)
+          </h2>
+          <div className="text-xs text-stone-400 font-mono">System Ready</div>
+      </div>
 
       {/* Alert Banner */}
-      {pendingCount > 0 && (
+      {pendingOrders.length > 0 && (
         <div className="bg-red-600 rounded-xl p-3 mb-4 text-white shadow-lg shadow-red-200 flex items-center justify-between animate-pulse">
            <div className="flex items-center gap-3">
               <div className="p-2 bg-white/20 rounded-full"><AlertTriangle size={24} /></div>
               <div>
-                <div className="font-bold text-lg">มีออเดอร์รอทำ {pendingCount} รายการ</div>
+                <div className="font-bold text-lg">มีออเดอร์รอทำ {pendingOrders.length} รายการ</div>
                 <div className="text-red-100 text-xs">กรุณารับออเดอร์และเริ่มปรุงอาหารทันที</div>
               </div>
            </div>
@@ -109,40 +118,34 @@ export const KitchenView: React.FC = () => {
       <div className="flex-1 grid grid-cols-3 gap-4 min-h-0">
         <KanbanColumn 
           title="รอทำ (Ordered)" 
-          status={OrderStatus.PENDING}
-          items={activeOrders.filter(o => o.status === OrderStatus.PENDING)}
+          items={pendingOrders}
           icon={AlertCircle}
-          colorClass="bg-red-500" // Red for Waiting
+          colorClass="bg-red-500"
           isAlert={true}
           nextStatus={OrderStatus.COOKING}
           actionLabel="เริ่มทำ (Start)"
-          roleRequired={Role.CHEF}
           currentUser={currentUser}
           updateOrderStatus={updateOrderStatus}
           tables={tables}
         />
         <KanbanColumn 
           title="กำลังทำ (Cooking)" 
-          status={OrderStatus.COOKING}
-          items={activeOrders.filter(o => o.status === OrderStatus.COOKING)}
+          items={cookingOrders}
           icon={Flame}
           colorClass="bg-orange-500"
           nextStatus={OrderStatus.SERVING}
           actionLabel="พร้อมเสิร์ฟ (Ready)"
-          roleRequired={Role.CHEF}
           currentUser={currentUser}
           updateOrderStatus={updateOrderStatus}
           tables={tables}
         />
         <KanbanColumn 
           title="รอเสิร์ฟ (Serving)" 
-          status={OrderStatus.SERVING}
-          items={activeOrders.filter(o => o.status === OrderStatus.SERVING)}
+          items={servingOrders}
           icon={User}
           colorClass="bg-green-500"
           nextStatus={OrderStatus.SERVED}
           actionLabel="เสิร์ฟแล้ว (Served)"
-          roleRequired={Role.STAFF}
           currentUser={currentUser}
           updateOrderStatus={updateOrderStatus}
           tables={tables}
