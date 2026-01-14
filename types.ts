@@ -104,3 +104,13 @@ export interface StoreSession {
   closedAt?: Date;
   isOpen: boolean;
 }
+
+export interface SessionRecord {
+  id: string;
+  openedAt: Date;
+  closedAt?: Date;
+  openedBy: string;
+  closedBy?: string;
+  totalSales: number;
+  orderCount: number;
+}

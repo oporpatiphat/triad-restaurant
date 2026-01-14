@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem, Role } from '../types';
+import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem, Role, SessionRecord } from '../types';
 import { generateTables, INITIAL_INGREDIENTS, INITIAL_MENU, MOCK_USERS, INITIAL_POSITIONS } from '../constants';
 import { db, isCloudEnabled } from './firebaseConfig';
 import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, Timestamp, query, orderBy, getDocs, getDoc } from 'firebase/firestore';
@@ -9,8 +9,9 @@ interface StoreContextType {
   login: (username: string, password?: string) => boolean;
   logout: () => void;
   storeSession: StoreSession;
-  openStore: (dailyMenuUpdates: MenuItem[]) => void;
-  closeStore: () => void;
+  sessionHistory: SessionRecord[]; // New State
+  openStore: (dailyMenuUpdates: MenuItem[], openerName: string) => void;
+  closeStore: (closerName: string) => void;
   tables: Table[];
   updateTableStatus: (tableId: string, status: TableStatus) => void;
   orders: Order[];
@@ -56,6 +57,7 @@ const KEYS = {
   STAFF: 'TRIAD_STAFF_V8',
   POSITIONS: 'TRIAD_POSITIONS_V8',
   SESSION: 'TRIAD_SESSION_V8',
+  SESSIONS_HISTORY: 'TRIAD_SESSIONS_HISTORY_V1', // New Key
   USER: 'TRIAD_USER_V8'
 };
 
@@ -85,6 +87,22 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
     } catch(e) {}
     return { isOpen: false, openedAt: new Date() };
+  });
+
+  const [sessionHistory, setSessionHistory] = useState<SessionRecord[]>(() => {
+    if (isCloudMode) return [];
+    try {
+      const saved = localStorage.getItem(KEYS.SESSIONS_HISTORY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((s: any) => ({
+            ...s,
+            openedAt: new Date(s.openedAt),
+            closedAt: s.closedAt ? new Date(s.closedAt) : undefined
+        }));
+      }
+    } catch(e) {}
+    return [];
   });
 
   const [tables, setTables] = useState<Table[]>(() => {
@@ -227,6 +245,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const unsubSession = onSnapshot(doc(db!, 'config', 'session'), (doc) => {
         if (doc.exists()) setStoreSession(processDoc(doc) as StoreSession);
     });
+    // New: Listen for Session History
+    const unsubHistory = onSnapshot(query(collection(db!, 'sessions'), orderBy('openedAt', 'desc')), (snap) => {
+        setSessionHistory(snap.docs.map(processDoc) as SessionRecord[]);
+    });
+
     const unsubTables = onSnapshot(collection(db!, 'tables'), (snap) => {
         const data = snap.docs.map(processDoc) as Table[];
         const sorted = data.sort((a,b) => {
@@ -253,7 +276,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
 
     return () => {
-        unsubSession(); unsubTables(); unsubOrders(); unsubMenu(); unsubInventory(); unsubStaff(); unsubPositions();
+        unsubSession(); unsubHistory(); unsubTables(); unsubOrders(); unsubMenu(); unsubInventory(); unsubStaff(); unsubPositions();
     };
   }, [isCloudMode]);
 
@@ -305,10 +328,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       localStorage.removeItem(KEYS.USER);
   };
 
-  const openStore = async (dailyMenuUpdates: MenuItem[]) => {
+  const openStore = async (dailyMenuUpdates: MenuItem[], openerName: string) => {
+    const newSessionRecord: SessionRecord = {
+        id: `sess-${Date.now()}`,
+        openedAt: new Date(),
+        openedBy: openerName,
+        totalSales: 0,
+        orderCount: 0
+    };
+
     if (isCloudMode && db) {
        const batch = writeBatch(db!);
        batch.set(doc(db!, 'config', 'session'), { isOpen: true, openedAt: new Date() });
+       // Add to history
+       batch.set(doc(db!, 'sessions', newSessionRecord.id), newSessionRecord);
+       
        dailyMenuUpdates.forEach(m => {
           batch.update(doc(db!, 'menu', m.id), { dailyStock: m.dailyStock, isAvailable: m.isAvailable });
        });
@@ -317,17 +351,71 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
        const newSession = { isOpen: true, openedAt: new Date() };
        setMenu(dailyMenuUpdates);
        setStoreSession(newSession);
+       
+       setSessionHistory(prev => {
+          const next = [newSessionRecord, ...prev];
+          saveToStorage(KEYS.SESSIONS_HISTORY, next);
+          return next;
+       });
+
        saveToStorage(KEYS.MENU, dailyMenuUpdates);
        saveToStorage(KEYS.SESSION, newSession);
     }
   };
 
-  const closeStore = async () => {
+  const closeStore = async (closerName: string) => {
+    // Calculate current session stats before closing
+    // We assume orders from "openedAt" until now belong to this session.
+    const currentOrders = orders.filter(o => o.timestamp >= storeSession.openedAt);
+    const totalSales = currentOrders
+        .filter(o => o.status === OrderStatus.COMPLETED)
+        .reduce((sum, o) => sum + o.totalAmount, 0);
+    const orderCount = currentOrders.length;
+
     if (isCloudMode && db) {
-        await updateDoc(doc(db!, 'config', 'session'), { isOpen: false, closedAt: new Date() });
+        const batch = writeBatch(db!);
+        batch.update(doc(db!, 'config', 'session'), { isOpen: false, closedAt: new Date() });
+        
+        // Update the latest open session in history
+        // We need to query for the open session first, but for simplicity in batch:
+        // We might not have the ID easily in Context unless we stored it. 
+        // Strategy: Query active session (where closedAt is null) then update.
+        // Due to async inside batch limitation, we do a separate query first.
+        const q = query(collection(db, 'sessions'), orderBy('openedAt', 'desc'));
+        const snap = await getDocs(q);
+        const latestSession = snap.docs[0]; // Assuming top is latest
+
+        if (latestSession && !latestSession.data().closedAt) {
+            batch.update(latestSession.ref, {
+                closedAt: new Date(),
+                closedBy: closerName,
+                totalSales,
+                orderCount
+            });
+        }
+
+        await batch.commit();
     } else {
         const newSession = { ...storeSession, isOpen: false, closedAt: new Date() };
         setStoreSession(newSession);
+        
+        setSessionHistory(prev => {
+            // Update the first element (latest session)
+            if (prev.length > 0 && !prev[0].closedAt) {
+                const updatedLatest = {
+                    ...prev[0],
+                    closedAt: new Date(),
+                    closedBy: closerName,
+                    totalSales,
+                    orderCount
+                };
+                const next = [updatedLatest, ...prev.slice(1)];
+                saveToStorage(KEYS.SESSIONS_HISTORY, next);
+                return next;
+            }
+            return prev;
+        });
+
         saveToStorage(KEYS.SESSION, newSession);
     }
   };
@@ -572,14 +660,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         
         // Auto-recalculate menu stock if stock INCREASED
         if (delta > 0 && ingName) {
-            // Find menus using this ingredient
             const affectedMenus = menu.filter(m => m.ingredients.includes(ingName) && m.dailyStock !== -1);
-            
-            // Note: Since we are in a batch, we can't read the *new* inventory value from DB yet.
-            // We have to use local 'inventory' state + 'delta' to estimate.
-            // This is a "Best Effort" update for UI convenience.
-            
-            // Create a temp inventory map with the new value
             const tempInventory = inventory.map(i => i.id === itemId ? { ...i, quantity: newQuantity } : i);
 
             affectedMenus.forEach(m => {
@@ -593,9 +674,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                    }
                 });
                 
-                // Only bump up if the new possible is higher than current dailyStock
-                // And only if dailyStock was seemingly limited by inventory (e.g. it was 0 or low)
-                // This is heuristics. 
                 if (maxPossible > m.dailyStock) {
                     batch.update(doc(db!, 'menu', m.id), { dailyStock: maxPossible, isAvailable: maxPossible > 0 });
                 }
@@ -792,7 +870,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   return (
     <StoreContext.Provider value={{
       currentUser, login, logout,
-      storeSession, openStore, closeStore,
+      storeSession, sessionHistory, openStore, closeStore,
       tables, updateTableStatus,
       orders, createOrder, updateOrderStatus, deleteOrder,
       menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,

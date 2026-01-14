@@ -51,8 +51,14 @@ export const Layout: React.FC = () => {
       alert("ไม่สามารถเปิดร้านได้: กรุณากำหนดเมนูที่พร้อมขายอย่างน้อย 1 รายการ");
       return;
     }
-    openStore(dailyMenu);
+    openStore(dailyMenu, currentUser?.name || 'Unknown');
     setShowOpenModal(false);
+  };
+  
+  const handleCloseStore = () => {
+      if(confirm("ยืนยันการปิดร้านประจำวัน?")) {
+          closeStore(currentUser?.name || 'Unknown');
+      }
   };
 
   const updateDailyItem = (id: string, updates: Partial<MenuItem>) => {
@@ -64,9 +70,6 @@ export const Layout: React.FC = () => {
     if (!item.ingredients || item.ingredients.length === 0) return 999;
     
     let maxPortions = 9999;
-    
-    // We assume 1 portion consumes 1 unit of each listed ingredient (Simplified logic from createOrder)
-    // If you have recipes with quantities, logic would be: Math.floor(inv.quantity / recipe.required)
     
     item.ingredients.forEach(ingName => {
         const invItem = inventory.find(i => i.name === ingName);
@@ -186,7 +189,7 @@ export const Layout: React.FC = () => {
                  </div>
                  {canOperateStore && (
                    <button 
-                    onClick={storeSession.isOpen ? closeStore : handleOpenStoreClick}
+                    onClick={storeSession.isOpen ? handleCloseStore : handleOpenStoreClick}
                     className={`text-[10px] font-bold px-3 py-1 rounded transition-colors tracking-wider ${storeSession.isOpen ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-green-700 text-white'}`}
                    >
                      {storeSession.isOpen ? 'CLOSE' : 'OPEN'}
@@ -244,7 +247,7 @@ export const Layout: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto p-6 relative bg-stone-100">
-        {!storeSession.isOpen && currentPath !== 'admin' && currentPath !== 'menu' && currentPath !== 'staff' && currentPath !== 'inventory' ? (
+        {!storeSession.isOpen && currentPath !== 'admin' && currentPath !== 'menu' && currentPath !== 'staff' && currentPath !== 'inventory' && currentPath !== 'history' ? (
            <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-200/90 backdrop-blur-sm z-10">
              <div className="bg-white p-10 rounded-2xl shadow-2xl text-center border-t-4 border-red-600 max-w-sm">
                 <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600">
