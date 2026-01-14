@@ -81,16 +81,19 @@ const KanbanColumn = React.memo(({ title, items, icon: Icon, colorClass, nextSta
 export const KitchenView: React.FC = () => {
   const { orders, updateOrderStatus, tables, currentUser } = useStore();
   
-  // Filter active orders for KDS
-  const activeOrders = useMemo(() => orders.filter(o => 
-    o.status !== OrderStatus.CANCELLED && 
-    o.status !== OrderStatus.COMPLETED &&
-    o.status !== OrderStatus.WAITING_PAYMENT
-  ), [orders]);
+  // UseMemo to prevent flickering during rapid state updates
+  const activeOrders = useMemo(() => {
+    if (!orders) return [];
+    return orders.filter(o => 
+      o.status !== OrderStatus.CANCELLED && 
+      o.status !== OrderStatus.COMPLETED &&
+      o.status !== OrderStatus.WAITING_PAYMENT
+    );
+  }, [orders]);
   
-  const pendingOrders = activeOrders.filter(o => o.status === OrderStatus.PENDING);
-  const cookingOrders = activeOrders.filter(o => o.status === OrderStatus.COOKING);
-  const servingOrders = activeOrders.filter(o => o.status === OrderStatus.SERVING);
+  const pendingOrders = useMemo(() => activeOrders.filter(o => o.status === OrderStatus.PENDING), [activeOrders]);
+  const cookingOrders = useMemo(() => activeOrders.filter(o => o.status === OrderStatus.COOKING), [activeOrders]);
+  const servingOrders = useMemo(() => activeOrders.filter(o => o.status === OrderStatus.SERVING), [activeOrders]);
 
   return (
     <div className="h-full flex flex-col">
