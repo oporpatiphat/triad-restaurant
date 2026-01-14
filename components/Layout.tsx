@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
-import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity } from 'lucide-react';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity, Cloud, CloudOff } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,7 +10,7 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
-  const { currentUser, logout, storeSession, openStore, closeStore, orders, menu } = useStore();
+  const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, isCloudMode } = useStore();
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [dailyMenu, setDailyMenu] = useState<MenuItem[]>([]);
   const [menuSearch, setMenuSearch] = useState('');
@@ -27,8 +27,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
 
   useEffect(() => {
     if (showOpenModal) {
-      // UPDATED: Initialize all items as Unavailable (0 stock) for daily setup
-      // User must explicitly enter quantity to enable selling
       setDailyMenu(menu.map(m => ({ 
         ...m, 
         dailyStock: 0, 
@@ -42,15 +40,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
   };
 
   const handleConfirmOpen = () => {
-    // Validate: At least one item must be available
     const hasAvailableItems = dailyMenu.some(item => item.isAvailable);
-    
     if (!hasAvailableItems) {
-      // This case is also handled by the disabled button, but as a safety measure
       alert("ไม่สามารถเปิดร้านได้: กรุณากำหนดเมนูที่พร้อมขายอย่างน้อย 1 รายการ");
       return;
     }
-
     openStore(dailyMenu);
     setShowOpenModal(false);
   };
@@ -116,15 +110,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
     );
   };
 
-  // Helper to check if user should see management menu
   const canManage = currentUser?.role === Role.OWNER;
-  
-  // Validation for Open Store Modal
   const isMenuReady = dailyMenu.some(m => m.isAvailable);
 
   return (
     <div className="flex h-screen bg-[#F5F5F4] overflow-hidden">
-      {/* Sidebar */}
       <aside className="w-64 bg-gradient-to-b from-red-900 to-red-950 text-white flex flex-col shadow-xl relative z-20">
         {/* Brand Header */}
         <div className="p-6 border-b border-red-800/50">
@@ -136,6 +126,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
               <h1 className="text-xl font-bold text-amber-400 tracking-wide font-heading leading-none">Triad Restaurant</h1>
               <p className="text-[10px] text-red-200 tracking-[0.2em] font-medium mt-1">BY LI GROUP</p>
             </div>
+          </div>
+          
+          {/* Cloud Status Indicator */}
+          <div className={`mt-4 flex items-center gap-2 text-xs px-2 py-1 rounded border ${isCloudMode ? 'bg-green-900/30 border-green-800 text-green-300' : 'bg-stone-900/30 border-stone-700 text-stone-400'}`}>
+             {isCloudMode ? <Cloud size={12} /> : <CloudOff size={12} />}
+             <span>{isCloudMode ? 'Cloud Online' : 'Local Mode'}</span>
           </div>
         </div>
 
@@ -167,8 +163,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
-            
-            {/* Operation Section (Visible to everyone) */}
             <div>
               <h3 className="px-4 text-[10px] font-bold text-red-400 uppercase tracking-wider mb-2">Operation</h3>
               <div className="space-y-1">
@@ -176,7 +170,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
               </div>
             </div>
 
-            {/* Management Section (Restricted) */}
             {canManage && (
               <div>
                 <h3 className="px-4 text-[10px] font-bold text-red-400 uppercase tracking-wider mb-2">Management</h3>
@@ -296,7 +289,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                               </div>
                               
                               <div className="flex items-center gap-3">
-                                  {/* Custom Quantity Control (Minus/Input/Plus) - No Browser Spinner */}
                                   <div className="flex items-center bg-white rounded-lg border border-stone-300 flex-1 overflow-hidden h-10 shadow-sm">
                                       <button 
                                         onClick={() => updateStockQuantity(item.id, -1)}
@@ -328,7 +320,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                                       </button>
                                   </div>
                                   
-                                  {/* Unlimited Button - Matched Height */}
                                   <button
                                     onClick={() => updateDailyItem(item.id, { dailyStock: -1, isAvailable: true })}
                                     className={`h-10 aspect-square flex items-center justify-center rounded-lg border transition-colors shadow-sm ${item.dailyStock === -1 ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-stone-300 text-stone-400 hover:bg-stone-50'}`}
@@ -338,7 +329,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                                   </button>
                               </div>
                               
-                              {/* Quick Add Buttons */}
                               <div className="flex gap-1 mt-2">
                                  {[5, 10, 20].map(val => (
                                    <button
@@ -366,7 +356,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                )}
             </div>
 
-            {/* Validation & Actions */}
             <div className="p-6 bg-white border-t border-stone-200 flex justify-between items-center">
                <div className="text-sm">
                  {!isMenuReady && (
