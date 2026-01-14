@@ -140,7 +140,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const sortedOrders = [...orders].sort((a,b) => b.timestamp.getTime() - a.timestamp.getTime());
       
       sortedOrders.forEach(o => {
-        if (o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED && o.status !== OrderStatus.SERVED) {
+        // Include SERVED and WAITING_PAYMENT as "Active" statuses that keep table occupied
+        if (o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED) {
            // If table not already mapped (since we sort newest first, we take the latest active one)
            if (!activeOrderMap.has(o.tableId)) {
                activeOrderMap.set(o.tableId, o);
@@ -165,10 +166,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                hasChanges = true;
             }
          } 
-         // REMOVED Case B (Aggressive Reset): 
-         // Previously we checked if table was OCCUPIED but order was missing, then reset to AVAILABLE.
-         // This caused race conditions where the table updated before the order list, causing the table to reset.
-         // We now rely on 'updateOrderStatus' (Complete/Cancel) to explicitly free the table.
+         // REMOVED Aggressive Reset: We do NOT force table to AVAILABLE if order is missing from map here.
+         // We trust 'updateOrderStatus' (Complete/Cancel) to free the table explicitly.
+         // This prevents race conditions where the order list is updating but table resets first.
       }
 
       return hasChanges ? newTables : currentTables;
@@ -467,6 +467,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         
         // UPDATE BOTH STATES SYNCHRONOUSLY
         setOrders(prev => [...prev, newOrder]);
+        // Explicitly lock the table immediately
         setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } : t));
     }
   };

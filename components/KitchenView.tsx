@@ -3,28 +3,16 @@ import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
 import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle } from 'lucide-react';
 
-export const KitchenView: React.FC = () => {
-  const { orders, updateOrderStatus, tables, currentUser } = useStore();
-  
-  // Filter active orders (Excluding completed, cancelled, and served - served orders are handled on floor)
-  const activeOrders = orders.filter(o => 
-    o.status !== OrderStatus.CANCELLED && 
-    o.status !== OrderStatus.COMPLETED &&
-    o.status !== OrderStatus.WAITING_PAYMENT &&
-    o.status !== OrderStatus.SERVED
-  );
-  
-  const pendingCount = activeOrders.filter(o => o.status === OrderStatus.PENDING).length;
-
-  const getTableNumber = (tableId: string) => tables.find(t => t.id === tableId)?.number || '??';
-
-  const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert }: any) => {
+// --- Extract KanbanColumn Component OUTSIDE (Fixes stability issues) ---
+const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, tables }: any) => {
     // Permission Logic:
     // Simply check if user is OWNER (Admin/Manager) or STAFF (Employee)
     // Both roles should be able to operate the KDS (Kitchen Display System)
-    const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF;
+    const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
 
     const isRestricted = !canAct;
+
+    const getTableNumber = (tableId: string) => tables.find((t: any) => t.id === tableId)?.number || '??';
     
     return (
       <div className={`flex flex-col h-full bg-white rounded-2xl border shadow-sm overflow-hidden ${isAlert ? 'border-red-500 ring-2 ring-red-100' : 'border-stone-200'}`}>
@@ -84,7 +72,19 @@ export const KitchenView: React.FC = () => {
         </div>
       </div>
     );
-  };
+};
+
+export const KitchenView: React.FC = () => {
+  const { orders, updateOrderStatus, tables, currentUser } = useStore();
+  
+  // Filter active orders (Excluding completed, cancelled, and waiting payment)
+  const activeOrders = orders.filter(o => 
+    o.status !== OrderStatus.CANCELLED && 
+    o.status !== OrderStatus.COMPLETED &&
+    o.status !== OrderStatus.WAITING_PAYMENT
+  );
+  
+  const pendingCount = activeOrders.filter(o => o.status === OrderStatus.PENDING).length;
 
   return (
     <div className="h-full flex flex-col">
@@ -117,6 +117,9 @@ export const KitchenView: React.FC = () => {
           nextStatus={OrderStatus.COOKING}
           actionLabel="เริ่มทำ (Start)"
           roleRequired={Role.CHEF}
+          currentUser={currentUser}
+          updateOrderStatus={updateOrderStatus}
+          tables={tables}
         />
         <KanbanColumn 
           title="กำลังทำ (Cooking)" 
@@ -127,6 +130,9 @@ export const KitchenView: React.FC = () => {
           nextStatus={OrderStatus.SERVING}
           actionLabel="พร้อมเสิร์ฟ (Ready)"
           roleRequired={Role.CHEF}
+          currentUser={currentUser}
+          updateOrderStatus={updateOrderStatus}
+          tables={tables}
         />
         <KanbanColumn 
           title="รอเสิร์ฟ (Serving)" 
@@ -137,6 +143,9 @@ export const KitchenView: React.FC = () => {
           nextStatus={OrderStatus.SERVED}
           actionLabel="เสิร์ฟแล้ว (Served)"
           roleRequired={Role.STAFF}
+          currentUser={currentUser}
+          updateOrderStatus={updateOrderStatus}
+          tables={tables}
         />
       </div>
     </div>
