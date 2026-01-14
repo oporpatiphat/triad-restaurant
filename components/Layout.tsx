@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
 import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity, Cloud, CloudOff } from 'lucide-react';
 
-interface LayoutProps {
-  children: React.ReactNode;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
-}
-
-export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
+export const Layout: React.FC = () => {
   const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, isCloudMode } = useStore();
+  const location = useLocation();
+  const navigate = useNavigate();
+  
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [dailyMenu, setDailyMenu] = useState<MenuItem[]>([]);
   const [menuSearch, setMenuSearch] = useState('');
+
+  // Determine active tab from URL
+  const currentPath = location.pathname.split('/')[1] || 'floorplan';
 
   // Calculate notifications
   const pendingOrders = orders.filter(o => o.status === OrderStatus.PENDING).length;
@@ -34,6 +35,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
       })));
     }
   }, [showOpenModal, menu]);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const handleOpenStoreClick = () => {
     setShowOpenModal(true);
@@ -82,11 +88,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
   const categories = ['Main Dish', 'Appetizer', 'Soup', 'Drink', 'Set', 'Other'];
 
   const renderMenuItem = (item: any) => {
-    const isActive = activeTab === item.id;
+    const isActive = currentPath === item.id;
     return (
       <button
         key={item.id}
-        onClick={() => setActiveTab(item.id)}
+        onClick={() => navigate(`/${item.id}`)}
         className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl transition-all duration-200 group relative overflow-hidden ${
           isActive
             ? 'bg-red-800 text-amber-400 shadow-inner font-bold' 
@@ -192,7 +198,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
             </div>
           </div>
           <button 
-            onClick={logout}
+            onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 bg-red-900/50 hover:bg-red-800 text-red-200 hover:text-white py-2 rounded-lg transition-colors text-xs font-medium border border-red-800"
           >
             <LogOut size={14} />
@@ -203,7 +209,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto p-6 relative bg-stone-100">
-        {!storeSession.isOpen && activeTab !== 'admin' && activeTab !== 'menu' && activeTab !== 'staff' && activeTab !== 'inventory' ? (
+        {!storeSession.isOpen && currentPath !== 'admin' && currentPath !== 'menu' && currentPath !== 'staff' && currentPath !== 'inventory' ? (
            <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-200/90 backdrop-blur-sm z-10">
              <div className="bg-white p-10 rounded-2xl shadow-2xl text-center border-t-4 border-red-600 max-w-sm">
                 <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600">
@@ -215,7 +221,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
            </div>
         ) : (
           <div className="max-w-7xl mx-auto animate-fade-in pb-10">
-            {children}
+            <Outlet />
           </div>
         )}
       </main>
