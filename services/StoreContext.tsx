@@ -117,9 +117,46 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return [];
   });
 
-  // --- REMOVED THE PROBLEMATIC SELF-HEALING USE_EFFECT HERE ---
-  // We now rely on explicit state updates in createOrder/updateOrderStatus 
-  // to ensure stability and prevent disappearing orders.
+  // --- SYNC TABLES ON MOUNT (Local Mode Only) ---
+  // This runs once to ensure tables are occupied if there are pending orders.
+  // It fixes the issue where tables show as available after refresh even if they have orders.
+  useEffect(() => {
+    if (isCloudMode) return;
+    
+    setTables(currentTables => {
+        let hasChanges = false;
+        const newTables = [...currentTables];
+        const activeOrderMap = new Map<string, string>();
+
+        // Find latest active order for each table
+        const sortedOrders = [...orders].sort((a,b) => b.timestamp.getTime() - a.timestamp.getTime());
+        sortedOrders.forEach(o => {
+             const isActive = o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED;
+             if (isActive && !activeOrderMap.has(o.tableId)) {
+                 activeOrderMap.set(o.tableId, o.id);
+             }
+        });
+
+        for(let i=0; i<newTables.length; i++) {
+             const t = newTables[i];
+             const orderId = activeOrderMap.get(t.id);
+             
+             if (orderId) {
+                 if (t.status === TableStatus.AVAILABLE || t.currentOrderId !== orderId) {
+                     newTables[i] = { ...t, status: TableStatus.OCCUPIED, currentOrderId: orderId };
+                     hasChanges = true;
+                 }
+             } else {
+                 // If table is occupied but no order exists in orders list (e.g. data cleared), free it
+                 if (t.status !== TableStatus.AVAILABLE) {
+                     newTables[i] = { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined };
+                     hasChanges = true;
+                 }
+             }
+        }
+        return hasChanges ? newTables : currentTables;
+    });
+  }, []); // Run once on mount
 
   const [menu, setMenu] = useState<MenuItem[]>(() => {
     if (isCloudMode) return ENHANCED_INITIAL_MENU;

@@ -3,7 +3,7 @@ import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
 import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle } from 'lucide-react';
 
-// Standard Component (Removed React.memo to prevent stale props issues)
+// Standard Component
 const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, tables }: any) => {
     
     // Permission: Owner, Staff, Chef can act
@@ -11,6 +11,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
     const isRestricted = !canAct;
 
     const getTableNumber = (tableId: string) => {
+        if (!tables) return '??';
         const t = tables.find((t: any) => t.id === tableId);
         return t ? t.number : '??';
     };
@@ -81,16 +82,10 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
 export const KitchenView: React.FC = () => {
   const { orders, updateOrderStatus, tables, currentUser } = useStore();
   
-  // Simplified Logic: Direct filtering
-  const activeOrders = orders.filter(o => 
-    o.status !== OrderStatus.CANCELLED && 
-    o.status !== OrderStatus.COMPLETED &&
-    o.status !== OrderStatus.WAITING_PAYMENT
-  );
-  
-  const pendingOrders = activeOrders.filter(o => o.status === OrderStatus.PENDING);
-  const cookingOrders = activeOrders.filter(o => o.status === OrderStatus.COOKING);
-  const servingOrders = activeOrders.filter(o => o.status === OrderStatus.SERVING);
+  // Directly filter without intermediate activeOrders to avoid any stale closure or caching issues
+  const pendingOrders = orders ? orders.filter(o => o.status === OrderStatus.PENDING) : [];
+  const cookingOrders = orders ? orders.filter(o => o.status === OrderStatus.COOKING) : [];
+  const servingOrders = orders ? orders.filter(o => o.status === OrderStatus.SERVING) : [];
 
   return (
     <div className="h-full flex flex-col">
