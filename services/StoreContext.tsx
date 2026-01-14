@@ -18,6 +18,7 @@ interface StoreContextType {
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
+  deleteMenuItem: (itemId: string) => void;
   toggleMenuAvailability: (itemId: string) => void;
   updateMenuStock: (itemId: string, quantity: number) => void;
   inventory: Ingredient[];
@@ -210,8 +211,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               hasUpdates = true;
           }
 
-          // 5. Configs - Skipped complex check to avoid unused variables error
-          
           if (hasUpdates) {
               await batch.commit();
               console.log("Cloud Database Initialized Successfully!");
@@ -237,8 +236,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           alert("ในโหมด Cloud ระบบจะซิงค์ข้อมูลอัตโนมัติ หากข้อมูลไม่ตรงกัน กรุณารีเฟรชหน้าจอ");
           return;
       }
-      
-      // ... Local Mode Healing Logic ...
   };
 
   // --- CLOUD LISTENERS ---
@@ -384,24 +381,29 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
         console.log("Attempting to create order...", { tableId, items, isCloudMode });
 
-        // 1. Inventory Check
+        // 1. Inventory Check & Calculation
+        const requiredIngredients = new Map<string, number>();
+        
+        // Loop through all items in the order
         for (const item of items) {
           const menuItem = menu.find(m => m.id === item.menuItemId);
+          
+          // Check Menu Stock
           if (menuItem && menuItem.dailyStock !== -1 && menuItem.dailyStock < item.quantity) {
             alert(`ขออภัย เมนู ${menuItem.name} เหลือเพียง ${menuItem.dailyStock} ที่`);
             return false;
           }
-        }
-        const requiredIngredients = new Map<string, number>();
-        items.forEach(orderItem => {
-          const menuItem = menu.find(m => m.id === orderItem.menuItemId);
+
+          // Calculate Ingredients Needed
           if (menuItem && menuItem.ingredients) {
-            menuItem.ingredients.forEach(ingName => {
-              const current = requiredIngredients.get(ingName) || 0;
-              requiredIngredients.set(ingName, current + orderItem.quantity);
-            });
+             menuItem.ingredients.forEach(ingName => {
+                const current = requiredIngredients.get(ingName) || 0;
+                requiredIngredients.set(ingName, current + item.quantity); // 1 item uses 1 unit of ingredient (simplified)
+             });
           }
-        });
+        }
+
+        // Check Inventory Levels
         for (const [ingName, requiredQty] of requiredIngredients.entries()) {
           const stockItem = inventory.find(i => i.name === ingName);
           if (!stockItem || stockItem.quantity < requiredQty) {
@@ -431,26 +433,34 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             batch.set(orderRef, newOrder);
             
             // B. Update Table
-            // CRITICAL: Ensure table document exists. If 'initializeCloudData' ran, it should.
             const tableRef = doc(db!, 'tables', tableId);
             batch.update(tableRef, { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
             
-            // C. Update Stock (Menu & Ingredients)
+            // C. Update Menu Daily Stock
             items.forEach(orderItem => {
                 const menuItem = menu.find(m => m.id === orderItem.menuItemId);
-                if (menuItem) {
-                    // Update Menu Stock
-                    if (menuItem.dailyStock !== -1) {
-                         batch.update(doc(db!, 'menu', menuItem.id), { 
-                             dailyStock: Math.max(0, menuItem.dailyStock - orderItem.quantity) 
-                         });
-                    }
-                    // Update Ingredients - Simplified for demo
+                if (menuItem && menuItem.dailyStock !== -1) {
+                    batch.update(doc(db!, 'menu', menuItem.id), { 
+                        dailyStock: Math.max(0, menuItem.dailyStock - orderItem.quantity) 
+                    });
                 }
             });
             
+            // D. Update Ingredient Inventory (REAL DEDUCTION)
+            // Note: inventory state is used to map name -> id
+            requiredIngredients.forEach((qtyToRemove, ingName) => {
+               const invItem = inventory.find(i => i.name === ingName);
+               if (invItem) {
+                  // Important: Use current local state as base, but Firestore batch ensures atomicity of the write
+                  // Limitation: If multiple devices order simultaneously, this relies on the local state being reasonably up to date.
+                  // For stricter consistency, we'd need a Transaction, but Batch is okay for this requirement level.
+                  const newQty = Math.max(0, invItem.quantity - qtyToRemove);
+                  batch.update(doc(db!, 'inventory', invItem.id), { quantity: newQty });
+               }
+            });
+            
             await batch.commit();
-            console.log("Cloud Order Committed.");
+            console.log("Cloud Order Committed with Inventory Updates.");
             return true;
         } else {
             // --- LOCAL MODE ---
@@ -560,6 +570,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     }
   };
+  
+  const deleteMenuItem = async (itemId: string) => {
+    if (isCloudMode && db) {
+        await deleteDoc(doc(db!, 'menu', itemId));
+    } else {
+        setMenu(prev => {
+            const next = prev.filter(item => item.id !== itemId);
+            saveToStorage(KEYS.MENU, next);
+            return next;
+        });
+    }
+  };
+
   const toggleMenuAvailability = async (itemId: string) => {
     if (isCloudMode && db) {
         const item = menu.find(m => m.id === itemId);
@@ -695,7 +718,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       storeSession, openStore, closeStore,
       tables, updateTableStatus,
       orders, createOrder, updateOrderStatus,
-      menu, addMenuItem, toggleMenuAvailability, updateMenuStock,
+      menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,
       inventory, updateIngredientQuantity, addIngredient, removeIngredient,
       staffList, addStaff, updateStaff, terminateStaff,
       availablePositions, addPosition, removePosition, movePosition,

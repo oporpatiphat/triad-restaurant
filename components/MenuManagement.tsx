@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare } from 'lucide-react';
+import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2 } from 'lucide-react';
 import { MenuItem } from '../types';
 
 export const MenuManagement: React.FC = () => {
-  const { menu, addMenuItem, toggleMenuAvailability, inventory } = useStore();
+  const { menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, inventory } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({
     name: '',
@@ -33,6 +33,12 @@ export const MenuManagement: React.FC = () => {
       setShowForm(false);
       setNewItem({ name: '', description: '', price: 0, cost: 0, category: 'Main Dish', isAvailable: true, ingredients: [] });
     }
+  };
+
+  const handleDelete = (item: MenuItem) => {
+      if(confirm(`คุณแน่ใจหรือไม่ที่จะลบเมนู "${item.name}"? การกระทำนี้ไม่สามารถย้อนกลับได้`)) {
+          deleteMenuItem(item.id);
+      }
   };
 
   const handleIngredientToggle = (ingredientName: string) => {
@@ -236,7 +242,17 @@ export const MenuManagement: React.FC = () => {
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {items.map(item => (
-                        <div key={item.id} className={`bg-white p-5 rounded-2xl shadow-sm border transition-all hover:shadow-md group ${item.isAvailable ? 'border-stone-200' : 'border-stone-200 bg-stone-50 opacity-80'}`}>
+                        <div key={item.id} className={`bg-white p-5 rounded-2xl shadow-sm border transition-all hover:shadow-md group relative ${item.isAvailable ? 'border-stone-200' : 'border-stone-200 bg-stone-50 opacity-80'}`}>
+                            
+                            {/* Delete Button (Visible on Hover) */}
+                            <button 
+                                onClick={() => handleDelete(item)}
+                                className="absolute -top-2 -right-2 bg-white text-stone-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full shadow-sm border border-stone-200 opacity-0 group-hover:opacity-100 transition-all z-10"
+                                title="ลบเมนู"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+
                             <div className="flex justify-between items-start mb-3">
                                 <h3 className={`font-bold text-lg line-clamp-1 ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`}>{item.name}</h3>
                                 <button 
