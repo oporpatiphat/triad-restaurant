@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Crown, ArrowRight, Eye, EyeOff, Info } from 'lucide-react';
+import { Crown, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login } = useStore();
@@ -94,16 +94,6 @@ export const Login: React.FC = () => {
               <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform"/>
             </button>
           </form>
-
-          {/* Hint Section */}
-          <div className="mt-6 p-4 rounded-lg bg-[#2A090D]/50 border border-[#5E141B] flex gap-3 text-xs">
-              <Info size={16} className="text-[#FBBF24] shrink-0 mt-0.5" />
-              <div className="text-[#A16268]">
-                 <div className="font-bold text-[#FBBF24] mb-1">รหัสเริ่มต้น (Master Key):</div>
-                 <div>Username: <span className="font-mono text-white select-all">sumalin</span></div>
-                 <div>Password: <span className="font-mono text-white select-all">9753127</span></div>
-              </div>
-          </div>
           
           <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 md:translate-x-0 md:left-auto md:right-10 text-[#5E141B] text-xs">
              © 2023 Li Group. All Rights Reserved.
