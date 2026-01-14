@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
 import { Refrigerator, AlertTriangle, Minus, Plus, PlusCircle, X, Save, Trash2, Eye, Package, Layers, CheckCircle, RotateCcw, Edit3 } from 'lucide-react';
 import { Ingredient, IngredientCategory, Role } from '../types';
