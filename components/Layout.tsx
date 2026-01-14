@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
-import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity, Cloud, CloudOff, Activity } from 'lucide-react';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity, Cloud, CloudOff } from 'lucide-react';
 
 export const Layout: React.FC = () => {
   const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, isCloudMode } = useStore();
@@ -83,7 +83,7 @@ export const Layout: React.FC = () => {
   const managementMenu = [
     { id: 'menu', label: 'จัดการเมนู', icon: Coffee },
     { id: 'staff', label: 'พนักงาน', icon: Users },
-    { id: 'activity', label: 'ติดตามงาน', icon: Activity },
+    // Removed Activity Menu
   ];
 
   const categories = ['Main Dish', 'Appetizer', 'Soup', 'Drink', 'Set', 'Other'];
@@ -210,7 +210,7 @@ export const Layout: React.FC = () => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto p-6 relative bg-stone-100">
-        {!storeSession.isOpen && currentPath !== 'admin' && currentPath !== 'menu' && currentPath !== 'staff' && currentPath !== 'inventory' && currentPath !== 'activity' ? (
+        {!storeSession.isOpen && currentPath !== 'admin' && currentPath !== 'menu' && currentPath !== 'staff' && currentPath !== 'inventory' ? (
            <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-200/90 backdrop-blur-sm z-10">
              <div className="bg-white p-10 rounded-2xl shadow-2xl text-center border-t-4 border-red-600 max-w-sm">
                 <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600">

@@ -124,6 +124,59 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return [];
   });
 
+  // --- SELF-HEALING: Sync Tables with Active Orders (Fix Disappearing Orders in Local Mode) ---
+  useEffect(() => {
+    // Only run this logic if NOT in cloud mode (Cloud mode handles via DB)
+    if (isCloudMode) return;
+
+    setTables(currentTables => {
+      let hasChanges = false;
+      const newTables = [...currentTables];
+
+      // 1. Identify which tables SHOULD be occupied based on active orders
+      const activeOrderMap = new Map<string, Order>(); // tableId -> Order
+      orders.forEach(o => {
+        if (o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED) {
+           activeOrderMap.set(o.tableId, o);
+        }
+      });
+
+      // 2. Scan tables and fix discrepancies
+      for (let i = 0; i < newTables.length; i++) {
+         const table = newTables[i];
+         const activeOrder = activeOrderMap.get(table.id);
+
+         if (activeOrder) {
+            // Case A: Table should be occupied but is marked available (or wrong order linked)
+            if (table.status === TableStatus.AVAILABLE || table.currentOrderId !== activeOrder.id) {
+               newTables[i] = { 
+                 ...table, 
+                 status: activeOrder.status === OrderStatus.WAITING_PAYMENT ? TableStatus.OCCUPIED : TableStatus.OCCUPIED, 
+                 currentOrderId: activeOrder.id 
+               };
+               hasChanges = true;
+            }
+         } else {
+            // Case B: Table thinks it has an order, but that order doesn't exist/is closed in 'orders' list
+            if (table.status === TableStatus.OCCUPIED && table.currentOrderId && !orders.find(o => o.id === table.currentOrderId)) {
+                // Only free the table if the order ID is completely missing from our knowledge base (orphaned)
+                // If the order exists but is COMPLETED, the createOrder/updateOrder logic usually handles it.
+                // This is just a fallback for "phantom" locks.
+                newTables[i] = {
+                    ...table,
+                    status: TableStatus.AVAILABLE,
+                    currentOrderId: undefined
+                };
+                hasChanges = true;
+            }
+         }
+      }
+
+      return hasChanges ? newTables : currentTables;
+    });
+  }, [orders, isCloudMode]);
+
+
   const [menu, setMenu] = useState<MenuItem[]>(() => {
     if (isCloudMode) return ENHANCED_INITIAL_MENU;
     try {
@@ -368,7 +421,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
 
     const newOrder: Order = {
-        id: `ord-${Date.now()}`,
+        id: `ord-${Date.now()}-${Math.floor(Math.random()*1000)}`, // Reduced collision chance
         tableId,
         customerName,
         customerClass,
@@ -413,6 +466,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return newInventory;
         });
         setOrders(prev => [...prev, newOrder]);
+        // Note: Table status update is also handled by the new useEffect, but explicit update here is safer for immediate feedback
         setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } : t));
     }
   };
