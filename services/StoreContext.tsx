@@ -44,7 +44,7 @@ const ENHANCED_INITIAL_MENU = INITIAL_MENU.map(item => ({
 }));
 
 const KEYS = {
-  TABLES: 'TRIAD_TABLES_V5',
+  // REMOVED 'TRIAD_TABLES_V5' to prevent conflict. Tables are now derived or cloud-synced.
   ORDERS: 'TRIAD_ORDERS_V5',
   MENU: 'TRIAD_MENU_V5',
   INVENTORY: 'TRIAD_INVENTORY_V5',
@@ -90,17 +90,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return { isOpen: false, openedAt: new Date() };
   });
 
-  const [tables, setTables] = useState<Table[]>(() => {
-    if (isCloudMode) return generateTables();
-    try {
-      const saved = localStorage.getItem(KEYS.TABLES);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch(e) {}
-    return generateTables();
-  });
+  // Always initialize tables from generator locally first. 
+  // Cloud will overwrite. Local mode will derive status from orders.
+  const [tables, setTables] = useState<Table[]>(generateTables());
 
   const [orders, setOrders] = useState<Order[]>(() => {
     if (isCloudMode) return [];
@@ -117,46 +109,52 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return [];
   });
 
-  // --- SYNC TABLES ON MOUNT (Local Mode Only) ---
-  // This runs once to ensure tables are occupied if there are pending orders.
-  // It fixes the issue where tables show as available after refresh even if they have orders.
+  // --- REACTIVE TABLE SYNC (The Fix) ---
+  // This ensures Tables correspond EXACTLY to Orders in Local Mode.
+  // It runs whenever 'orders' changes.
   useEffect(() => {
     if (isCloudMode) return;
-    
-    setTables(currentTables => {
-        let hasChanges = false;
-        const newTables = [...currentTables];
-        const activeOrderMap = new Map<string, string>();
 
-        // Find latest active order for each table
-        const sortedOrders = [...orders].sort((a,b) => b.timestamp.getTime() - a.timestamp.getTime());
+    setTables(prevTables => {
+        // 1. Find all active orders
+        const activeOrderMap = new Map<string, string>();
+        
+        // Use a loop to be explicit. If multiple orders exist for a table (bug), take the latest.
+        // We sort by timestamp ascending so latest overwrites earlier.
+        const sortedOrders = [...orders].sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime());
+        
         sortedOrders.forEach(o => {
-             const isActive = o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED;
-             if (isActive && !activeOrderMap.has(o.tableId)) {
-                 activeOrderMap.set(o.tableId, o.id);
-             }
+            const isActive = o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED;
+            if (isActive) {
+                activeOrderMap.set(o.tableId, o.id);
+            }
         });
 
-        for(let i=0; i<newTables.length; i++) {
-             const t = newTables[i];
-             const orderId = activeOrderMap.get(t.id);
-             
-             if (orderId) {
-                 if (t.status === TableStatus.AVAILABLE || t.currentOrderId !== orderId) {
-                     newTables[i] = { ...t, status: TableStatus.OCCUPIED, currentOrderId: orderId };
-                     hasChanges = true;
-                 }
-             } else {
-                 // If table is occupied but no order exists in orders list (e.g. data cleared), free it
-                 if (t.status !== TableStatus.AVAILABLE) {
-                     newTables[i] = { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined };
-                     hasChanges = true;
-                 }
-             }
-        }
-        return hasChanges ? newTables : currentTables;
+        let hasChanges = false;
+        const newTables = prevTables.map(t => {
+            const activeOrderId = activeOrderMap.get(t.id);
+
+            // CASE 1: Table SHOULD be Occupied
+            if (activeOrderId) {
+                if (t.status !== TableStatus.OCCUPIED || t.currentOrderId !== activeOrderId) {
+                    hasChanges = true;
+                    return { ...t, status: TableStatus.OCCUPIED, currentOrderId: activeOrderId };
+                }
+            } 
+            // CASE 2: Table SHOULD be Available (but is currently marked Occupied by an old order)
+            else if (t.status === TableStatus.OCCUPIED) {
+                 // Check if it's dirty or reserved? For now, we assume Occupied -> Available via Order completion
+                 hasChanges = true;
+                 return { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined };
+            }
+            
+            return t;
+        });
+
+        return hasChanges ? newTables : prevTables;
     });
-  }, []); // Run once on mount
+
+  }, [orders, isCloudMode]);
 
   const [menu, setMenu] = useState<MenuItem[]>(() => {
     if (isCloudMode) return ENHANCED_INITIAL_MENU;
@@ -238,7 +236,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // --- LocalStorage Persistence ---
   useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.SESSION, JSON.stringify(storeSession)); }, [storeSession, isCloudMode]);
-  useEffect(() => { if (!isCloudMode && tables.length > 0) localStorage.setItem(KEYS.TABLES, JSON.stringify(tables)); }, [tables, isCloudMode]);
+  // REMOVED Table Persistence to avoid conflicts
   useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.ORDERS, JSON.stringify(orders)); }, [orders, isCloudMode]);
   useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.MENU, JSON.stringify(menu)); }, [menu, isCloudMode]);
   useEffect(() => { if (!isCloudMode) localStorage.setItem(KEYS.INVENTORY, JSON.stringify(inventory)); }, [inventory, isCloudMode]);
@@ -398,10 +396,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
         
         // --- ATOMIC UPDATE FOR LOCAL MODE ---
-        // 1. Add Order
+        // Just add the order. The useEffect hook (Reactive Table Sync) will handle the table locking automatically.
         setOrders(prev => [...prev, newOrder]);
-        // 2. Lock Table
-        setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } : t));
     }
   };
 
@@ -436,13 +432,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return { ...o, ...updates };
         }));
         
-        // Manual Table Release for Local Mode
-        if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
-             const order = orders.find(o => o.id === orderId);
-             if (order) {
-                setTables(prev => prev.map(t => t.id === order.tableId ? { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined } : t));
-             }
-        }
+        // Note: No manual table updates here either. The useEffect hook will see the status change to COMPLETED/CANCELLED
+        // and automatically free the table.
         
         if (status === OrderStatus.CANCELLED) {
              const order = orders.find(o => o.id === orderId);
