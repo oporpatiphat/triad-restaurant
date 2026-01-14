@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { StoreProvider, useStore } from './services/StoreContext';
 import { Login } from './components/Login';
 import { Layout } from './components/Layout';
@@ -53,9 +53,9 @@ const AppRoutes: React.FC = () => {
 export default function App() {
   return (
     <StoreProvider>
-      <BrowserRouter>
+      <HashRouter>
         <AppRoutes />
-      </BrowserRouter>
+      </HashRouter>
     </StoreProvider>
   );
 }

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem, Role } from '../types';
 import { generateTables, INITIAL_INGREDIENTS, INITIAL_MENU, MOCK_USERS, INITIAL_POSITIONS } from '../constants';
 import { db, isCloudEnabled } from './firebaseConfig';
-import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, writeBatch, Timestamp, query, orderBy, getDocs, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, writeBatch, runTransaction, Timestamp, query, orderBy, getDocs, getDoc } from 'firebase/firestore';
 
 interface StoreContextType {
   currentUser: User | null;
@@ -16,7 +16,7 @@ interface StoreContextType {
   orders: Order[];
   createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[]) => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
-  deleteOrder: (orderId: string) => void; // New function
+  deleteOrder: (orderId: string) => void; 
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
   deleteMenuItem: (itemId: string) => void;
@@ -88,8 +88,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   });
 
   const [tables, setTables] = useState<Table[]>(() => {
-    // In cloud mode, start empty and let listener populate. 
-    // This prevents UI flickering or showing fake data before real data loads.
     if (isCloudMode) return []; 
     try {
       const saved = localStorage.getItem(KEYS.TABLES);
@@ -117,7 +115,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   });
 
   const [menu, setMenu] = useState<MenuItem[]>(() => {
-    if (isCloudMode) return []; // Cloud mode waits for fetch
+    if (isCloudMode) return [];
     try {
       const saved = localStorage.getItem(KEYS.MENU);
       if (saved) return JSON.parse(saved);
@@ -152,7 +150,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return INITIAL_POSITIONS;
   });
 
-  // --- Safe Storage Helper ---
   const saveToStorage = (key: string, data: any) => {
     if (!isCloudMode) {
         try {
@@ -166,83 +163,47 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   // --- CLOUD INITIALIZATION ---
   const initializeCloudData = async () => {
       if (!isCloudMode || !db) return;
-      
       try {
-          console.log("Checking Cloud Database Integrity...");
           const batch = writeBatch(db!);
           let hasUpdates = false;
 
-          // 1. Check Tables
           const tablesSnap = await getDocs(collection(db!, 'tables'));
           if (tablesSnap.empty) {
-              console.log("Initializing Cloud Tables...");
-              const initialTables = generateTables();
-              initialTables.forEach(t => {
-                  batch.set(doc(db!, 'tables', t.id), t);
-              });
+              generateTables().forEach(t => batch.set(doc(db!, 'tables', t.id), t));
               hasUpdates = true;
           }
-
-          // 2. Check Menu
           const menuSnap = await getDocs(collection(db!, 'menu'));
           if (menuSnap.empty) {
-              console.log("Initializing Cloud Menu...");
-              ENHANCED_INITIAL_MENU.forEach(m => {
-                  batch.set(doc(db!, 'menu', m.id), m);
-              });
+              ENHANCED_INITIAL_MENU.forEach(m => batch.set(doc(db!, 'menu', m.id), m));
               hasUpdates = true;
           }
-
-          // 3. Check Inventory
           const invSnap = await getDocs(collection(db!, 'inventory'));
           if (invSnap.empty) {
-              console.log("Initializing Cloud Inventory...");
-              INITIAL_INGREDIENTS.forEach(i => {
-                  batch.set(doc(db!, 'inventory', i.id), i);
-              });
+              INITIAL_INGREDIENTS.forEach(i => batch.set(doc(db!, 'inventory', i.id), i));
               hasUpdates = true;
           }
-
-          // 4. Check Staff
           const staffSnap = await getDocs(collection(db!, 'staff'));
           if (staffSnap.empty) {
-              console.log("Initializing Cloud Staff...");
-              MOCK_USERS.forEach(u => {
-                  batch.set(doc(db!, 'staff', u.id), u);
-              });
+              MOCK_USERS.forEach(u => batch.set(doc(db!, 'staff', u.id), u));
               hasUpdates = true;
           }
-
-          // 5. Configs (Positions) - Check if exists
           const positionsRef = doc(db!, 'config', 'positions');
           const positionsDoc = await getDoc(positionsRef);
           if (!positionsDoc.exists()) {
-              console.log("Initializing Cloud Positions...");
               batch.set(positionsRef, { list: INITIAL_POSITIONS });
               hasUpdates = true;
           }
 
           if (hasUpdates) {
               await batch.commit();
-              console.log("Cloud Database Initialized Successfully!");
               alert("ระบบ Cloud ได้เตรียมฐานข้อมูลเริ่มต้นเรียบร้อยแล้ว");
-          } else {
-              console.log("Cloud Database already has data.");
           }
-
       } catch (error) {
-          console.error("Failed to initialize cloud data:", error);
           alert("ไม่สามารถเชื่อมต่อฐานข้อมูลได้ (Permission Error หรือ Config ผิดพลาด)");
       }
   };
 
-
-  // --- SELF-HEALING MECHANISM ---
   const runSelfHealing = () => {
-      // Allow self-healing in Cloud Mode now, but be careful with batch writes
-      console.log("Running Self-Healing System...");
-      // Logic remains similar but for Cloud we need to perform updates differently
-      // For now, keep it simple/local alert for cloud
       if (isCloudMode) {
           alert("ในโหมด Cloud ระบบจะซิงค์ข้อมูลอัตโนมัติ หากข้อมูลไม่ตรงกัน กรุณารีเฟรชหน้าจอ");
           return;
@@ -252,8 +213,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   // --- CLOUD LISTENERS ---
   useEffect(() => {
     if (!isCloudMode || !db) return;
-    
-    // Auto-init on first load if empty
     initializeCloudData();
 
     const processDoc = (docSnap: any) => {
@@ -270,7 +229,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
     const unsubTables = onSnapshot(collection(db!, 'tables'), (snap) => {
         const data = snap.docs.map(processDoc) as Table[];
-        // Sort tables by ID number for consistent display
         const sorted = data.sort((a,b) => {
             const numA = parseInt(a.number.replace(/\D/g,'')) || 0;
             const numB = parseInt(b.number.replace(/\D/g,'')) || 0;
@@ -299,8 +257,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, [isCloudMode]);
 
-
-  // --- Actions ---
+  // --- ACTIONS ---
 
   const resetSystem = () => {
     if (confirm("คุณแน่ใจหรือไม่ที่จะรีเซ็ตข้อมูลทั้งหมด?")) {
@@ -314,7 +271,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const login = (username: string, password?: string) => {
-    // Master Bypass for Demo/Setup
     if (username === 'sumalin' && password === '9753127') {
       const existingAdmin = staffList.find(u => u.username === 'sumalin');
       const user = existingAdmin || {
@@ -388,110 +344,140 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  // --- FIX BUG #3: IMPLEMENT RUN TRANSACTION ---
   const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[]): Promise<boolean> => {
     try {
-        console.log("Attempting to create order...", { tableId, items, isCloudMode });
-
-        // 1. Inventory Check & Calculation
-        const requiredIngredients = new Map<string, number>();
-        
-        // Loop through all items in the order
-        for (const item of items) {
-          const menuItem = menu.find(m => m.id === item.menuItemId);
-          
-          // Check Menu Stock
-          if (menuItem && menuItem.dailyStock !== -1 && menuItem.dailyStock < item.quantity) {
-            alert(`ขออภัย เมนู ${menuItem.name} เหลือเพียง ${menuItem.dailyStock} ที่`);
-            return false;
-          }
-
-          // Calculate Ingredients Needed
-          if (menuItem && menuItem.ingredients) {
-             menuItem.ingredients.forEach(ingName => {
-                const current = requiredIngredients.get(ingName) || 0;
-                requiredIngredients.set(ingName, current + item.quantity); // 1 item uses 1 unit of ingredient (simplified)
-             });
-          }
-        }
-
-        // Check Inventory Levels
-        for (const [ingName, requiredQty] of requiredIngredients.entries()) {
-          const stockItem = inventory.find(i => i.name === ingName);
-          if (!stockItem || stockItem.quantity < requiredQty) {
-            alert(`วัตถุดิบ "${ingName}" ไม่เพียงพอ (ต้องการ ${requiredQty} แต่มี ${stockItem?.quantity || 0})`);
-            return false;
-          }
-        }
-
-        // 2. Prepare Data
-        const newOrder: Order = {
-            id: `ord-${Date.now()}`,
-            tableId,
-            customerName,
-            customerClass,
-            items: items,
-            status: OrderStatus.PENDING,
-            totalAmount: items.reduce((sum, i) => sum + (i.price * i.quantity), 0),
-            timestamp: new Date()
-        };
-
         if (isCloudMode && db) {
-            // CLOUD MODE EXECUTION
-            const batch = writeBatch(db!);
-            
-            // A. Create Order
-            const orderRef = doc(db!, 'orders', newOrder.id);
-            batch.set(orderRef, newOrder);
-            
-            // B. Update Table
-            const tableRef = doc(db!, 'tables', tableId);
-            batch.update(tableRef, { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
-            
-            // C. Update Menu Daily Stock
-            items.forEach(orderItem => {
-                const menuItem = menu.find(m => m.id === orderItem.menuItemId);
-                if (menuItem && menuItem.dailyStock !== -1) {
-                    batch.update(doc(db!, 'menu', menuItem.id), { 
-                        dailyStock: Math.max(0, menuItem.dailyStock - orderItem.quantity) 
+            // --- CLOUD MODE WITH TRANSACTION ---
+            await runTransaction(db, async (transaction) => {
+                // 1. READ ALL REQUIRED DATA FIRST
+                const tableRef = doc(db!, 'tables', tableId);
+                const tableDoc = await transaction.get(tableRef);
+                if (!tableDoc.exists()) throw "Table does not exist!";
+                
+                // Read Menu Items (to check stock)
+                const menuRefs = items.map(item => doc(db!, 'menu', item.menuItemId));
+                const menuDocs = await Promise.all(menuRefs.map(ref => transaction.get(ref)));
+
+                // Read Ingredients (to check inventory)
+                // First, collect all unique ingredient IDs needed
+                const requiredIngredientIds = new Set<string>();
+                const ingredientUsage = new Map<string, number>();
+
+                menuDocs.forEach((mDoc, idx) => {
+                    const mData = mDoc.data() as MenuItem;
+                    const orderQty = items[idx].quantity;
+                    // Check Menu Daily Stock
+                    if (mData.dailyStock !== -1 && mData.dailyStock < orderQty) {
+                        throw `เมนู "${mData.name}" หมดแล้ว หรือไม่พอ (เหลือ ${mData.dailyStock})`;
+                    }
+                    // Collect ingredients
+                    mData.ingredients.forEach(ingName => {
+                        // Find ID by name from LOCAL state (Lookup map) to get Ref
+                        // Note: Ideally we store ID in menu ingredients, but for now we map by name
+                        const ingObj = inventory.find(i => i.name === ingName);
+                        if (ingObj) {
+                            requiredIngredientIds.add(ingObj.id);
+                            const currentNeed = ingredientUsage.get(ingObj.id) || 0;
+                            ingredientUsage.set(ingObj.id, currentNeed + orderQty);
+                        }
                     });
-                }
+                });
+
+                const ingRefs = Array.from(requiredIngredientIds).map(id => doc(db!, 'inventory', id));
+                const ingDocs = await Promise.all(ingRefs.map(ref => transaction.get(ref)));
+
+                // Check Inventory Levels
+                ingDocs.forEach(iDoc => {
+                    const iData = iDoc.data() as Ingredient;
+                    const needed = ingredientUsage.get(iData.id) || 0;
+                    if (iData.quantity < needed) {
+                        throw `วัตถุดิบ "${iData.name}" ไม่พอ (ขาด ${needed - iData.quantity})`;
+                    }
+                });
+
+                // 2. WRITE UPDATES
+                const newOrder: Order = {
+                    id: `ord-${Date.now()}`,
+                    tableId,
+                    customerName,
+                    customerClass,
+                    items: items,
+                    status: OrderStatus.PENDING,
+                    totalAmount: items.reduce((sum, i) => sum + (i.price * i.quantity), 0),
+                    timestamp: new Date()
+                };
+
+                // Create Order
+                transaction.set(doc(db!, 'orders', newOrder.id), newOrder);
+                
+                // Update Table
+                transaction.update(tableRef, { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
+
+                // Update Menu Stock
+                menuDocs.forEach((mDoc, idx) => {
+                    const mData = mDoc.data() as MenuItem;
+                    const orderQty = items[idx].quantity;
+                    if (mData.dailyStock !== -1) {
+                        transaction.update(mDoc.ref, { dailyStock: mData.dailyStock - orderQty });
+                    }
+                });
+
+                // Update Inventory
+                ingDocs.forEach(iDoc => {
+                    const iData = iDoc.data() as Ingredient;
+                    const needed = ingredientUsage.get(iData.id) || 0;
+                    transaction.update(iDoc.ref, { quantity: iData.quantity - needed });
+                });
             });
-            
-            // D. Update Ingredient Inventory (REAL DEDUCTION)
-            // Note: inventory state is used to map name -> id
-            requiredIngredients.forEach((qtyToRemove, ingName) => {
-               const invItem = inventory.find(i => i.name === ingName);
-               if (invItem) {
-                  // Important: Use current local state as base, but Firestore batch ensures atomicity of the write
-                  // Limitation: If multiple devices order simultaneously, this relies on the local state being reasonably up to date.
-                  // For stricter consistency, we'd need a Transaction, but Batch is okay for this requirement level.
-                  const newQty = Math.max(0, invItem.quantity - qtyToRemove);
-                  batch.update(doc(db!, 'inventory', invItem.id), { quantity: newQty });
-               }
-            });
-            
-            await batch.commit();
-            console.log("Cloud Order Committed with Inventory Updates.");
+            console.log("Transaction successfully committed!");
             return true;
         } else {
-            // --- LOCAL MODE ---
-            let updatedOrders: Order[] = [];
-            let updatedTables: Table[] = [];
-            let updatedMenu: MenuItem[] = [];
-            let updatedInventory: Ingredient[] = [];
+            // --- LOCAL MODE (Existing Logic) ---
+             // 1. Inventory Check & Calculation
+            const requiredIngredients = new Map<string, number>();
+            for (const item of items) {
+                const menuItem = menu.find(m => m.id === item.menuItemId);
+                if (menuItem && menuItem.dailyStock !== -1 && menuItem.dailyStock < item.quantity) {
+                    alert(`ขออภัย เมนู ${menuItem.name} เหลือเพียง ${menuItem.dailyStock} ที่`);
+                    return false;
+                }
+                if (menuItem && menuItem.ingredients) {
+                    menuItem.ingredients.forEach(ingName => {
+                        const current = requiredIngredients.get(ingName) || 0;
+                        requiredIngredients.set(ingName, current + item.quantity);
+                    });
+                }
+            }
 
+            for (const [ingName, requiredQty] of requiredIngredients.entries()) {
+                const stockItem = inventory.find(i => i.name === ingName);
+                if (!stockItem || stockItem.quantity < requiredQty) {
+                    alert(`วัตถุดิบ "${ingName}" ไม่เพียงพอ (ต้องการ ${requiredQty} แต่มี ${stockItem?.quantity || 0})`);
+                    return false;
+                }
+            }
+
+            const newOrder: Order = {
+                id: `ord-${Date.now()}`,
+                tableId,
+                customerName,
+                customerClass,
+                items: items,
+                status: OrderStatus.PENDING,
+                totalAmount: items.reduce((sum, i) => sum + (i.price * i.quantity), 0),
+                timestamp: new Date()
+            };
+
+            let updatedOrders: Order[] = [];
             setOrders(prev => {
                 const next = [...prev, newOrder];
                 updatedOrders = next;
                 return next;
             });
             setTables(prev => {
-                const next = prev.map(t => 
-                    t.id === tableId 
-                    ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } 
-                    : t
-                );
-                updatedTables = next;
+                const next = prev.map(t => t.id === tableId ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } : t);
+                saveToStorage(KEYS.TABLES, next);
                 return next;
             });
             setMenu(prev => {
@@ -502,7 +488,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }
                     return m;
                 });
-                updatedMenu = next;
+                saveToStorage(KEYS.MENU, next);
                 return next;
             });
             setInventory(prev => {
@@ -513,23 +499,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }
                     return ing;
                 });
-                updatedInventory = next;
+                saveToStorage(KEYS.INVENTORY, next);
                 return next;
             });
-
             saveToStorage(KEYS.ORDERS, updatedOrders);
-            saveToStorage(KEYS.TABLES, updatedTables);
-            saveToStorage(KEYS.MENU, updatedMenu);
-            saveToStorage(KEYS.INVENTORY, updatedInventory);
-            
             return true;
         }
     } catch (error: any) {
-        console.error("Create Order Failed:", error);
-        let msg = "เกิดข้อผิดพลาดในการสร้างออเดอร์";
-        if (error.code === 'permission-denied') msg += " (ไม่มีสิทธิ์เข้าถึง Database)";
-        if (error.code === 'not-found') msg += " (ไม่พบข้อมูลโต๊ะหรือเมนูใน Cloud)";
-        alert(msg);
+        console.error("Order Transaction Failed:", error);
+        alert(`เกิดข้อผิดพลาด: ${error}`);
         return false;
     }
   };
@@ -583,6 +561,80 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  // --- FIX BUG #4: Auto-Update Menu Stock when Inventory Added ---
+  const updateIngredientQuantity = async (itemId: string, delta: number) => {
+    const ingName = inventory.find(i => i.id === itemId)?.name;
+    const newQuantity = Math.max(0, (inventory.find(i => i.id === itemId)?.quantity || 0) + delta);
+
+    if (isCloudMode && db) {
+        const batch = writeBatch(db!);
+        batch.update(doc(db!, 'inventory', itemId), { quantity: newQuantity });
+        
+        // Auto-recalculate menu stock if stock INCREASED
+        if (delta > 0 && ingName) {
+            // Find menus using this ingredient
+            const affectedMenus = menu.filter(m => m.ingredients.includes(ingName) && m.dailyStock !== -1);
+            
+            // Note: Since we are in a batch, we can't read the *new* inventory value from DB yet.
+            // We have to use local 'inventory' state + 'delta' to estimate.
+            // This is a "Best Effort" update for UI convenience.
+            
+            // Create a temp inventory map with the new value
+            const tempInventory = inventory.map(i => i.id === itemId ? { ...i, quantity: newQuantity } : i);
+
+            affectedMenus.forEach(m => {
+                let maxPossible = 9999;
+                m.ingredients.forEach(iName => {
+                   const iObj = tempInventory.find(i => i.name === iName);
+                   if (iObj) {
+                       if (iObj.quantity < maxPossible) maxPossible = iObj.quantity;
+                   } else {
+                       maxPossible = 0;
+                   }
+                });
+                
+                // Only bump up if the new possible is higher than current dailyStock
+                // And only if dailyStock was seemingly limited by inventory (e.g. it was 0 or low)
+                // This is heuristics. 
+                if (maxPossible > m.dailyStock) {
+                    batch.update(doc(db!, 'menu', m.id), { dailyStock: maxPossible, isAvailable: maxPossible > 0 });
+                }
+            });
+        }
+        await batch.commit();
+    } else {
+        // Local Mode Logic
+        const updatedInventory = inventory.map(item => item.id === itemId ? { ...item, quantity: newQuantity } : item);
+        setInventory(updatedInventory);
+        saveToStorage(KEYS.INVENTORY, updatedInventory);
+
+        if (delta > 0 && ingName) {
+            setMenu(prev => {
+                const next = prev.map(m => {
+                    if (m.ingredients.includes(ingName) && m.dailyStock !== -1) {
+                         // Recalculate Max
+                         let maxPossible = 9999;
+                         m.ingredients.forEach(iName => {
+                             const iObj = updatedInventory.find(i => i.name === iName);
+                             if (iObj) {
+                                 if (iObj.quantity < maxPossible) maxPossible = iObj.quantity;
+                             } else {
+                                 maxPossible = 0;
+                             }
+                         });
+                         if (maxPossible > m.dailyStock) {
+                             return { ...m, dailyStock: maxPossible, isAvailable: maxPossible > 0 };
+                         }
+                    }
+                    return m;
+                });
+                saveToStorage(KEYS.MENU, next);
+                return next;
+            });
+        }
+    }
+  };
+
   const addMenuItem = async (item: MenuItem) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), item);
     else {
@@ -628,18 +680,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     }
   };
-  const updateIngredientQuantity = async (itemId: string, delta: number) => {
-    if (isCloudMode && db) {
-        const item = inventory.find(i => i.id === itemId);
-        if(item) await updateDoc(doc(db!, 'inventory', itemId), { quantity: Math.max(0, item.quantity + delta) });
-    } else {
-        setInventory(prev => {
-            const next = prev.map(item => item.id === itemId ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item);
-            saveToStorage(KEYS.INVENTORY, next);
-            return next;
-        });
-    }
-  };
+
   const addIngredient = async (ingredient: Ingredient) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'inventory', ingredient.id), ingredient);
     else {
