@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin } from 'lucide-react';
-import { Order } from '../types';
+import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin, Trash2 } from 'lucide-react';
+import { Order, Role } from '../types';
 
 export const HistoryView: React.FC = () => {
-  const { orders, tables } = useStore();
+  const { orders, tables, deleteOrder, currentUser } = useStore();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   // Filter for completed/cancelled orders
@@ -20,6 +20,14 @@ export const HistoryView: React.FC = () => {
         hour: '2-digit', minute: '2-digit' 
     });
   };
+
+  const handleDelete = (orderId: string) => {
+     if (confirm("คำเตือน: คุณต้องการลบประวัติออเดอร์นี้ใช่หรือไม่? \n(การลบจะไม่คืนค่าวัตถุดิบและยอดเงิน)")) {
+         deleteOrder(orderId);
+     }
+  };
+
+  const canDelete = currentUser?.role === Role.OWNER;
 
   return (
     <div className="h-full flex flex-col">
@@ -40,7 +48,7 @@ export const HistoryView: React.FC = () => {
                 <th className="p-4 font-bold text-stone-600 text-center">การชำระ</th>
                 <th className="p-4 font-bold text-stone-600 text-right">ยอดรวม</th>
                 <th className="p-4 font-bold text-stone-600 text-center">สถานะ</th>
-                <th className="p-4 font-bold text-stone-600 text-center">ดูข้อมูล</th>
+                <th className="p-4 font-bold text-stone-600 text-center">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 text-sm">
@@ -78,12 +86,24 @@ export const HistoryView: React.FC = () => {
                      </span>
                   </td>
                   <td className="p-4 text-center">
-                     <button 
-                       onClick={() => setSelectedOrder(o)}
-                       className="p-2 hover:bg-red-50 text-stone-400 hover:text-red-600 rounded-lg transition-colors"
-                     >
-                        <Eye size={18} />
-                     </button>
+                     <div className="flex justify-center gap-2">
+                         <button 
+                           onClick={() => setSelectedOrder(o)}
+                           className="p-2 hover:bg-stone-100 text-stone-400 hover:text-stone-600 rounded-lg transition-colors"
+                           title="ดูรายละเอียด"
+                         >
+                            <Eye size={18} />
+                         </button>
+                         {canDelete && (
+                            <button 
+                                onClick={() => handleDelete(o.id)}
+                                className="p-2 hover:bg-red-50 text-stone-300 hover:text-red-600 rounded-lg transition-colors"
+                                title="ลบประวัติ"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                         )}
+                     </div>
                   </td>
                 </tr>
               ))}

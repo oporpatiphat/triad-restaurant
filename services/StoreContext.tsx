@@ -16,6 +16,7 @@ interface StoreContextType {
   orders: Order[];
   createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[]) => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
+  deleteOrder: (orderId: string) => void; // New function
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
   deleteMenuItem: (itemId: string) => void;
@@ -570,6 +571,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  const deleteOrder = async (orderId: string) => {
+    if (isCloudMode && db) {
+        await deleteDoc(doc(db!, 'orders', orderId));
+    } else {
+        setOrders(prev => {
+            const next = prev.filter(o => o.id !== orderId);
+            saveToStorage(KEYS.ORDERS, next);
+            return next;
+        });
+    }
+  };
+
   const addMenuItem = async (item: MenuItem) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), item);
     else {
@@ -740,7 +753,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       currentUser, login, logout,
       storeSession, openStore, closeStore,
       tables, updateTableStatus,
-      orders, createOrder, updateOrderStatus,
+      orders, createOrder, updateOrderStatus, deleteOrder,
       menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,
       inventory, updateIngredientQuantity, addIngredient, removeIngredient,
       staffList, addStaff, updateStaff, terminateStaff, deleteStaff,
