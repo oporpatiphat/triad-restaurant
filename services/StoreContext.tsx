@@ -33,6 +33,7 @@ interface StoreContextType {
   removePosition: (position: string) => void;
   movePosition: (position: string, direction: 'up' | 'down') => void;
   resetSystem: () => void;
+  runSelfHealing: () => void; // New capability exposed
   isCloudMode: boolean;
 }
 
@@ -43,16 +44,16 @@ const ENHANCED_INITIAL_MENU = INITIAL_MENU.map(item => ({
   dailyStock: -1 
 }));
 
-// Use V7 Keys to ensure fresh start with new logic
+// V8: Final Stable Version with Self-Healing
 const KEYS = {
-  TABLES: 'TRIAD_TABLES_V7',
-  ORDERS: 'TRIAD_ORDERS_V7',
-  MENU: 'TRIAD_MENU_V7',
-  INVENTORY: 'TRIAD_INVENTORY_V7',
-  STAFF: 'TRIAD_STAFF_V7',
-  POSITIONS: 'TRIAD_POSITIONS_V7',
-  SESSION: 'TRIAD_SESSION_V7',
-  USER: 'TRIAD_USER_V7'
+  TABLES: 'TRIAD_TABLES_V8',
+  ORDERS: 'TRIAD_ORDERS_V8',
+  MENU: 'TRIAD_MENU_V8',
+  INVENTORY: 'TRIAD_INVENTORY_V8',
+  STAFF: 'TRIAD_STAFF_V8',
+  POSITIONS: 'TRIAD_POSITIONS_V8',
+  SESSION: 'TRIAD_SESSION_V8',
+  USER: 'TRIAD_USER_V8'
 };
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -153,10 +154,73 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  // --- SELF-HEALING MECHANISM (The Fix for Disappearing Tables) ---
+  const runSelfHealing = () => {
+      if (isCloudMode) return;
+      
+      console.log("Running Self-Healing System...");
+      let tablesChanged = false;
+      
+      // 1. Get all active orders
+      const activeOrders = orders.filter(o => 
+          o.status !== OrderStatus.COMPLETED && 
+          o.status !== OrderStatus.CANCELLED
+      );
+
+      const healedTables = tables.map(t => {
+          // Find if there is an order for this table
+          const activeOrderForTable = activeOrders.find(o => o.tableId === t.id);
+
+          if (activeOrderForTable) {
+             // Case A: Order exists, but Table thinks it is AVAILABLE or has wrong Order ID
+             if (t.status === TableStatus.AVAILABLE || t.currentOrderId !== activeOrderForTable.id) {
+                 tablesChanged = true;
+                 console.log(`Healing Table ${t.id}: Forced to OCCUPIED by Order ${activeOrderForTable.id}`);
+                 return {
+                     ...t,
+                     status: TableStatus.OCCUPIED,
+                     currentOrderId: activeOrderForTable.id
+                 };
+             }
+          } else {
+             // Case B: Table thinks it is OCCUPIED, but no Active Order exists
+             if (t.status !== TableStatus.AVAILABLE && t.currentOrderId) {
+                 // Check if that order ID actually exists in our orders list
+                 const orderExists = orders.find(o => o.id === t.currentOrderId);
+                 
+                 // If order doesn't exist OR it is completed/cancelled
+                 if (!orderExists || orderExists.status === OrderStatus.COMPLETED || orderExists.status === OrderStatus.CANCELLED) {
+                     tablesChanged = true;
+                     console.log(`Healing Table ${t.id}: Forced to AVAILABLE (Ghost Order Removed)`);
+                     return {
+                         ...t,
+                         status: TableStatus.AVAILABLE,
+                         currentOrderId: undefined
+                     };
+                 }
+             }
+          }
+          return t;
+      });
+
+      if (tablesChanged) {
+          setTables(healedTables);
+          saveToStorage(KEYS.TABLES, healedTables);
+          console.log("Self-Healing Complete: Tables synchronized.");
+      } else {
+          console.log("System Healthy: No issues found.");
+      }
+  };
+
+  // Run Healing once on mount (Initial Load)
+  useEffect(() => {
+      runSelfHealing();
+  }, []); // Run once on mount
+
   // --- CLOUD LISTENERS ---
   useEffect(() => {
     if (!isCloudMode || !db) return;
-
+    // ... (Cloud Listeners unchanged) ...
     const processDoc = (docSnap: any) => {
         const data = docSnap.data();
         Object.keys(data).forEach(key => {
@@ -166,7 +230,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
         return { id: docSnap.id, ...data };
     };
-
     const unsubSession = onSnapshot(doc(db!, 'config', 'session'), (doc) => {
         if (doc.exists()) setStoreSession(processDoc(doc) as StoreSession);
     });
@@ -210,7 +273,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const login = (username: string, password?: string) => {
-    // ... logic same as before ...
     if (username === 'sumalin' && password === '9753127') {
       const existingAdmin = staffList.find(u => u.username === 'sumalin');
       const user = existingAdmin || {
@@ -247,7 +309,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const openStore = async (dailyMenuUpdates: MenuItem[]) => {
     if (isCloudMode && db) {
-       // ... cloud logic ...
        const batch = writeBatch(db!);
        batch.set(doc(db!, 'config', 'session'), { isOpen: true, openedAt: new Date() });
        dailyMenuUpdates.forEach(m => {
@@ -323,7 +384,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     if (isCloudMode && db) {
-        // ... Cloud Mode (unchanged) ...
         const batch = writeBatch(db!);
         batch.set(doc(db!, 'orders', newOrder.id), newOrder);
         batch.update(doc(db!, 'tables', tableId), { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
@@ -343,18 +403,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         await batch.commit();
     } else {
         // --- LOCAL MODE: ATOMIC & DIRECT SAVE ---
-        
-        // A. Update Orders
         const newOrders = [...orders, newOrder];
         
-        // B. Update Tables
         const newTables = tables.map(t => 
              t.id === tableId 
              ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } 
              : t
         );
 
-        // C. Update Menu Stock
         const newMenu = menu.map(m => {
             const orderItem = items.find(i => i.menuItemId === m.id);
             if (orderItem && m.dailyStock !== -1) {
@@ -363,7 +419,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return m;
         });
 
-        // D. Update Inventory
         const newInventory = inventory.map(ing => {
             const requiredQty = requiredIngredients.get(ing.name);
             if (requiredQty) {
@@ -372,14 +427,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return ing;
         });
 
-        // E. Commit ALL changes to State
+        // Commit state
         setOrders(newOrders);
         setTables(newTables);
         setMenu(newMenu);
         setInventory(newInventory);
 
-        // F. Commit ALL changes to Storage IMMEDIATELY
-        // This prevents the "disappearing" bug if the browser reloads/navigates fast.
+        // Commit storage
         saveToStorage(KEYS.ORDERS, newOrders);
         saveToStorage(KEYS.TABLES, newTables);
         saveToStorage(KEYS.MENU, newMenu);
@@ -394,7 +448,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (status === OrderStatus.COMPLETED && paymentMethod) updates.paymentMethod = paymentMethod;
 
     if (isCloudMode && db) {
-        // ... Cloud Mode ...
         const batch = writeBatch(db!);
         batch.update(doc(db!, 'orders', orderId), updates);
         if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
@@ -414,8 +467,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         await batch.commit();
     } else {
         // --- LOCAL MODE: DIRECT SAVE ---
-        
-        // Update Order
         const newOrders = orders.map(o => {
             if (o.id !== orderId) return o;
             return { ...o, ...updates };
@@ -423,7 +474,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setOrders(newOrders);
         saveToStorage(KEYS.ORDERS, newOrders);
         
-        // Update Table (if freeing)
         if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
              const newTables = tables.map(t => 
                 t.currentOrderId === orderId 
@@ -434,7 +484,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
              saveToStorage(KEYS.TABLES, newTables);
         }
         
-        // Update Stock (if cancelled)
         if (status === OrderStatus.CANCELLED) {
              const order = orders.find(o => o.id === orderId);
              if (order) {
@@ -450,8 +499,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // ... (Other CRUD functions updated to use Direct Save) ...
-
+  // ... (Other CRUD functions) ...
   const addMenuItem = async (item: MenuItem) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), item);
     else {
@@ -570,7 +618,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       inventory, updateIngredientQuantity, addIngredient, removeIngredient,
       staffList, addStaff, updateStaff, terminateStaff,
       availablePositions, addPosition, removePosition, movePosition,
-      resetSystem, isCloudMode
+      resetSystem, runSelfHealing, isCloudMode
     }}>
       {children}
     </StoreContext.Provider>

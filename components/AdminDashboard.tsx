@@ -1,20 +1,20 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus } from 'lucide-react';
+import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus, Activity, Database, RefreshCw, AlertTriangle, CloudOff } from 'lucide-react';
+import { OrderStatus, TableStatus } from '../types';
 
 export const AdminDashboard: React.FC = () => {
-  const { menu, inventory } = useStore();
+  const { menu, inventory, orders, tables, runSelfHealing, isCloudMode } = useStore();
+  const [activeTab, setActiveTab] = useState<'CALCULATE' | 'SYSTEM'>('CALCULATE');
 
-  // Selection State: Record of MenuID -> Quantity
+  // --- Calculation State ---
   const [menuQuantities, setMenuQuantities] = useState<Record<string, number>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
-  
-  // Result State
   const [calculationResult, setCalculationResult] = useState<any[]>([]);
   const [isCopied, setIsCopied] = useState(false);
 
-  // Filter Menus for display
+  // --- Filter Menus for display ---
   const displayedMenus = useMemo(() => {
     return menu.filter(m => {
       const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -25,13 +25,18 @@ export const AdminDashboard: React.FC = () => {
 
   const activeCount = (Object.values(menuQuantities) as number[]).filter(q => q > 0).length;
 
+  // --- System Health Stats ---
+  const activeOrders = orders.filter(o => o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED);
+  const occupiedTables = tables.filter(t => t.status !== TableStatus.AVAILABLE);
+  const isHealthy = activeOrders.length === occupiedTables.length;
+
+  // --- Calculation Logic ---
   const handleQuantityChange = (menuId: string, val: string) => {
     const num = parseInt(val);
     setMenuQuantities(prev => ({
       ...prev,
       [menuId]: isNaN(num) ? 0 : num
     }));
-    // Reset result when input changes to force recalculation
     setCalculationResult([]); 
   };
 
@@ -44,7 +49,6 @@ export const AdminDashboard: React.FC = () => {
     const selectedIds = Object.keys(menuQuantities).filter(id => menuQuantities[id] > 0);
     if (selectedIds.length === 0) return;
 
-    // Aggregation Logic
     const ingredientMap = new Map<string, { required: number, unit: string, category: string }>();
 
     selectedIds.forEach(menuId => {
@@ -53,12 +57,9 @@ export const AdminDashboard: React.FC = () => {
        
        if (menuItem) {
          menuItem.ingredients.forEach(ingName => {
-            // Find ingredient details from inventory to get Unit and Category
             const inventoryItem = inventory.find(i => i.name === ingName);
             const unit = inventoryItem ? inventoryItem.unit : 'หน่วย';
             const category = inventoryItem ? inventoryItem.category : 'อื่นๆ';
-            
-            // Logic: Assume 1 unit per dish
             const amountNeeded = qty * 1; 
 
             if (ingredientMap.has(ingName)) {
@@ -71,7 +72,6 @@ export const AdminDashboard: React.FC = () => {
        }
     });
 
-    // Convert Map to Array
     const results = Array.from(ingredientMap.entries()).map(([name, data]) => ({
        name,
        required: data.required,
@@ -84,8 +84,6 @@ export const AdminDashboard: React.FC = () => {
 
   const handleCopy = () => {
     if (calculationResult.length === 0) return;
-
-    // Filter categories
     const meatItems = calculationResult.filter(r => r.category === 'เนื้อสัตว์');
     const vegItems = calculationResult.filter(r => r.category === 'ผัก');
     const wineItems = calculationResult.filter(r => r.category === 'ไวน์');
@@ -97,31 +95,21 @@ export const AdminDashboard: React.FC = () => {
 
     let text = "รายการสั่งซื้อวัตถุดิบ (Triad Restaurant)\n";
     text += "================================\n";
-    
     if (meatItems.length > 0) {
         text += "[ หมวดเนื้อสัตว์ ]\n";
-        meatItems.forEach((res, idx) => {
-            text += `${idx + 1}. ${res.name} : ${res.required} ${res.unit}\n`;
-        });
+        meatItems.forEach((res, idx) => { text += `${idx + 1}. ${res.name} : ${res.required} ${res.unit}\n`; });
         text += "\n";
     }
-
     if (vegItems.length > 0) {
         text += "[ หมวดผัก ]\n";
-        vegItems.forEach((res, idx) => {
-            text += `${idx + 1}. ${res.name} : ${res.required} ${res.unit}\n`;
-        });
+        vegItems.forEach((res, idx) => { text += `${idx + 1}. ${res.name} : ${res.required} ${res.unit}\n`; });
         text += "\n";
     }
-
     if (wineItems.length > 0) {
         text += "[ หมวดไวน์ ]\n";
-        wineItems.forEach((res, idx) => {
-            text += `${idx + 1}. ${res.name} : ${res.required} ${res.unit}\n`;
-        });
+        wineItems.forEach((res, idx) => { text += `${idx + 1}. ${res.name} : ${res.required} ${res.unit}\n`; });
         text += "\n";
     }
-    
     text += "================================";
 
     navigator.clipboard.writeText(text).then(() => {
@@ -132,19 +120,43 @@ export const AdminDashboard: React.FC = () => {
 
   const menuCategories = ['All', ...Array.from(new Set(menu.map(m => m.category)))];
 
+  const handleSelfHeal = () => {
+    if(confirm("ระบบจะทำการตรวจสอบและแก้ไขสถานะโต๊ะให้ตรงกับออเดอร์ คุณต้องการดำเนินการหรือไม่?")) {
+        runSelfHealing();
+        alert("ดำเนินการเรียบร้อย");
+    }
+  }
+
   return (
     <div className="h-full space-y-4">
       <div className="flex justify-between items-center">
         <div>
             <h2 className="text-3xl font-bold text-stone-800 flex items-center gap-2">
-                <Calculator className="text-red-600" /> ระบบคำนวณวัตถุดิบ
+                {activeTab === 'CALCULATE' ? <Calculator className="text-red-600" /> : <Activity className="text-blue-600" />}
+                {activeTab === 'CALCULATE' ? 'ระบบคำนวณวัตถุดิบ' : 'ตรวจสอบระบบ (System Health)'}
             </h2>
-            <p className="text-stone-500 text-sm">เลือกจำนวนเมนูที่ต้องการผลิต เพื่อคำนวณวัตถุดิบรวม</p>
+            <p className="text-stone-500 text-sm">
+                {activeTab === 'CALCULATE' ? 'คำนวณปริมาณวัตถุดิบที่ต้องใช้ตามจำนวนออเดอร์' : 'ตรวจสอบสถานะข้อมูลและการทำงานของระบบ'}
+            </p>
+        </div>
+        <div className="flex gap-2">
+            <button 
+                onClick={() => setActiveTab('CALCULATE')}
+                className={`px-4 py-2 rounded-lg font-bold transition-colors ${activeTab === 'CALCULATE' ? 'bg-stone-800 text-white' : 'bg-white text-stone-600 hover:bg-stone-100'}`}
+            >
+                คำนวณวัตถุดิบ
+            </button>
+            <button 
+                onClick={() => setActiveTab('SYSTEM')}
+                className={`px-4 py-2 rounded-lg font-bold transition-colors ${activeTab === 'SYSTEM' ? 'bg-stone-800 text-white' : 'bg-white text-stone-600 hover:bg-stone-100'}`}
+            >
+                ตรวจสอบระบบ
+            </button>
         </div>
       </div>
 
+      {activeTab === 'CALCULATE' ? (
       <div className="flex gap-6 h-[calc(100vh-180px)]">
-         
          {/* LEFT SIDE: MENU LIST SELECTION */}
          <div className="w-7/12 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col overflow-hidden">
             {/* Toolbar */}
@@ -203,10 +215,7 @@ export const AdminDashboard: React.FC = () => {
                       <div className="flex items-center gap-2">
                          <div className="text-xs font-bold text-stone-400 uppercase mr-2 hidden sm:block">จำนวน</div>
                          <div className={`flex items-center rounded-lg shadow-sm border transition-all h-10
-                             ${qty > 0 
-                               ? 'bg-red-600 border-red-600' 
-                               : 'bg-stone-700 border-stone-700' 
-                             }`}
+                             ${qty > 0 ? 'bg-red-600 border-red-600' : 'bg-stone-700 border-stone-700'}`}
                          >
                            <button 
                              onClick={() => handleQuantityChange(m.id, String(Math.max(0, qty - 1)))}
@@ -235,10 +244,7 @@ export const AdminDashboard: React.FC = () => {
                    </div>
                  );
                })}
-               
-               {displayedMenus.length === 0 && (
-                  <div className="text-center p-10 text-stone-400">ไม่พบเมนู</div>
-               )}
+               {displayedMenus.length === 0 && <div className="text-center p-10 text-stone-400">ไม่พบเมนู</div>}
             </div>
 
             <div className="p-4 border-t border-stone-200 bg-white">
@@ -278,13 +284,9 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                ) : (
                   <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
-                     
-                     {/* Meat Section */}
                      {calculationResult.filter(r => r.category === 'เนื้อสัตว์').length > 0 && (
                         <div>
-                           <h4 className="font-bold text-red-700 mb-2 flex items-center gap-2 border-b border-red-100 pb-1">
-                              เนื้อสัตว์ (Meat)
-                           </h4>
+                           <h4 className="font-bold text-red-700 mb-2 flex items-center gap-2 border-b border-red-100 pb-1">เนื้อสัตว์ (Meat)</h4>
                            <ul className="space-y-2">
                               {calculationResult.filter(r => r.category === 'เนื้อสัตว์').map((res, idx) => (
                                  <li key={idx} className="flex justify-between items-center text-sm p-2 rounded hover:bg-stone-50">
@@ -295,13 +297,9 @@ export const AdminDashboard: React.FC = () => {
                            </ul>
                         </div>
                      )}
-
-                     {/* Veg Section */}
                      {calculationResult.filter(r => r.category === 'ผัก').length > 0 && (
                         <div>
-                           <h4 className="font-bold text-green-700 mb-2 flex items-center gap-2 border-b border-green-100 pb-1">
-                              ผัก (Vegetables)
-                           </h4>
+                           <h4 className="font-bold text-green-700 mb-2 flex items-center gap-2 border-b border-green-100 pb-1">ผัก (Vegetables)</h4>
                            <ul className="space-y-2">
                               {calculationResult.filter(r => r.category === 'ผัก').map((res, idx) => (
                                  <li key={idx} className="flex justify-between items-center text-sm p-2 rounded hover:bg-stone-50">
@@ -312,13 +310,9 @@ export const AdminDashboard: React.FC = () => {
                            </ul>
                         </div>
                      )}
-
-                     {/* Wine Section */}
                      {calculationResult.filter(r => r.category === 'ไวน์').length > 0 && (
                         <div>
-                           <h4 className="font-bold text-purple-700 mb-2 flex items-center gap-2 border-b border-purple-100 pb-1">
-                              ไวน์ (Wine)
-                           </h4>
+                           <h4 className="font-bold text-purple-700 mb-2 flex items-center gap-2 border-b border-purple-100 pb-1">ไวน์ (Wine)</h4>
                            <ul className="space-y-2">
                               {calculationResult.filter(r => r.category === 'ไวน์').map((res, idx) => (
                                  <li key={idx} className="flex justify-between items-center text-sm p-2 rounded hover:bg-stone-50">
@@ -329,8 +323,6 @@ export const AdminDashboard: React.FC = () => {
                            </ul>
                         </div>
                      )}
-
-                     {/* Info for other categories */}
                      {calculationResult.filter(r => r.category !== 'เนื้อสัตว์' && r.category !== 'ผัก' && r.category !== 'ไวน์').length > 0 && (
                         <div className="mt-8 p-3 bg-stone-100 rounded text-xs text-stone-500 text-center">
                            มีรายการอื่นๆ อีก {calculationResult.filter(r => r.category !== 'เนื้อสัตว์' && r.category !== 'ผัก' && r.category !== 'ไวน์').length} รายการ (ไม่ถูกรวมในการ Copy)
@@ -340,8 +332,76 @@ export const AdminDashboard: React.FC = () => {
                )}
             </div>
          </div>
-
       </div>
+      ) : (
+        // --- SYSTEM HEALTH TAB ---
+        <div className="h-[calc(100vh-180px)] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-6 mb-6">
+                <div className={`p-6 rounded-xl border flex items-center gap-4 ${isHealthy ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                   <div className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl ${isHealthy ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}>
+                      {isHealthy ? <Check /> : <AlertTriangle />}
+                   </div>
+                   <div>
+                      <h3 className={`text-xl font-bold ${isHealthy ? 'text-green-800' : 'text-red-800'}`}>
+                          {isHealthy ? 'System Healthy' : 'Data Mismatch Detected'}
+                      </h3>
+                      <p className="text-stone-600">
+                          {isHealthy ? 'ข้อมูลออเดอร์และสถานะโต๊ะสัมพันธ์กันถูกต้อง' : 'พบความผิดปกติของสถานะโต๊ะ (ออเดอร์ไม่ตรงกับสถานะ)'}
+                      </p>
+                   </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-center">
+                    <div className="flex justify-between items-center mb-2">
+                       <span className="text-stone-500 font-bold">Storage Mode</span>
+                       <span className="px-2 py-1 rounded bg-stone-100 text-xs font-mono">{isCloudMode ? 'Firebase Cloud' : 'Local Storage (Browser)'}</span>
+                    </div>
+                    {!isCloudMode && (
+                        <div className="flex items-center gap-2 text-stone-400 text-sm">
+                            <CloudOff size={16} /> Data is saved on this device only.
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden mb-6">
+                <div className="p-4 bg-stone-50 border-b border-stone-200 font-bold text-stone-700">
+                    Data Integrity Check
+                </div>
+                <div className="p-6 grid grid-cols-3 gap-8">
+                    <div className="text-center">
+                        <div className="text-3xl font-bold text-stone-800 mb-1">{activeOrders.length}</div>
+                        <div className="text-xs text-stone-500 uppercase font-bold">Active Orders</div>
+                    </div>
+                    <div className="flex flex-col items-center justify-center">
+                        <div className={`h-1 w-full rounded ${isHealthy ? 'bg-green-200' : 'bg-red-200'}`}></div>
+                        <div className={`mt-2 text-xs font-bold ${isHealthy ? 'text-green-600' : 'text-red-600'}`}>
+                            {isHealthy ? 'MATCHED' : 'MISMATCH'}
+                        </div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-3xl font-bold text-stone-800 mb-1">{occupiedTables.length}</div>
+                        <div className="text-xs text-stone-500 uppercase font-bold">Occupied Tables</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div className="flex justify-center">
+                <button 
+                  onClick={handleSelfHeal}
+                  disabled={isHealthy}
+                  className={`px-8 py-4 rounded-xl font-bold flex items-center gap-3 shadow-lg transition-all ${isHealthy ? 'bg-stone-200 text-stone-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200'}`}
+                >
+                    <RefreshCw size={24} className={!isHealthy ? "animate-spin-slow" : ""} />
+                    {isHealthy ? 'ระบบปกติ (No Action Needed)' : 'ซ่อมแซมข้อมูล (Run Self-Healing)'}
+                </button>
+            </div>
+            
+            <p className="text-center text-stone-400 text-sm mt-4 max-w-lg mx-auto">
+               หากพบปัญหาโต๊ะว่างแต่มีออเดอร์ หรือมีออเดอร์แต่โต๊ะว่าง ให้กดปุ่มซ่อมแซมข้อมูล ระบบจะทำการจับคู่ออเดอร์กับโต๊ะใหม่อัตโนมัติ
+            </p>
+        </div>
+      )}
     </div>
   );
 };
