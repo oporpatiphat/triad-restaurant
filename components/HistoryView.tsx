@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin, Trash2, ChevronLeft, Clock, ShoppingBag } from 'lucide-react';
+import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin, Trash2, ChevronLeft } from 'lucide-react';
 import { Order, Role, SessionRecord } from '../types';
 
 export const HistoryView: React.FC = () => {
