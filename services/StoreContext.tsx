@@ -43,15 +43,16 @@ const ENHANCED_INITIAL_MENU = INITIAL_MENU.map(item => ({
   dailyStock: -1 
 }));
 
+// UPDATED KEYS TO V6 TO FORCE CLEAN STATE
 const KEYS = {
-  TABLES: 'TRIAD_TABLES_V5', // Restore Table Persistence
-  ORDERS: 'TRIAD_ORDERS_V5',
-  MENU: 'TRIAD_MENU_V5',
-  INVENTORY: 'TRIAD_INVENTORY_V5',
-  STAFF: 'TRIAD_STAFF_V5',
-  POSITIONS: 'TRIAD_POSITIONS_V5',
-  SESSION: 'TRIAD_SESSION_V5',
-  USER: 'TRIAD_USER_V5'
+  TABLES: 'TRIAD_TABLES_V6',
+  ORDERS: 'TRIAD_ORDERS_V6',
+  MENU: 'TRIAD_MENU_V6',
+  INVENTORY: 'TRIAD_INVENTORY_V6',
+  STAFF: 'TRIAD_STAFF_V6',
+  POSITIONS: 'TRIAD_POSITIONS_V6',
+  SESSION: 'TRIAD_SESSION_V6',
+  USER: 'TRIAD_USER_V6'
 };
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -117,45 +118,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return [];
   });
 
-  // --- SAFETY NET: Run ONLY ONCE on mount to fix broken states ---
-  // If browser was closed while order was active, ensure table is still locked.
-  useEffect(() => {
-    if (isCloudMode) return;
-    
-    setTables(currentTables => {
-        let hasChanges = false;
-        const newTables = [...currentTables];
-        
-        // Find active orders
-        const activeOrderMap = new Map<string, string>();
-        orders.forEach(o => {
-             const isActive = o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED;
-             if (isActive) {
-                 // If multiple active orders for one table (bug), take the latest
-                 const existing = activeOrderMap.get(o.tableId);
-                 if (!existing) {
-                    activeOrderMap.set(o.tableId, o.id);
-                 }
-             }
-        });
-
-        for(let i=0; i<newTables.length; i++) {
-             const t = newTables[i];
-             const activeOrderId = activeOrderMap.get(t.id);
-             
-             if (activeOrderId) {
-                 // Ensure table is locked
-                 if (t.status === TableStatus.AVAILABLE || t.currentOrderId !== activeOrderId) {
-                     newTables[i] = { ...t, status: TableStatus.OCCUPIED, currentOrderId: activeOrderId };
-                     hasChanges = true;
-                 }
-             }
-             // NOTE: We do NOT auto-free tables here to avoid "Disappearing" bugs. 
-             // Tables must be freed explicitly by payment/cancellation.
-        }
-        return hasChanges ? newTables : currentTables;
-    });
-  }, []); // Empty dependency array = RUN ONCE ON MOUNT
+  // REMOVED: The mount-time safety net effect has been removed to prevent race conditions 
+  // where stale empty order lists might trigger table resets. 
+  // We now rely on the robust atomic updates in createOrder.
 
   const [menu, setMenu] = useState<MenuItem[]>(() => {
     if (isCloudMode) return ENHANCED_INITIAL_MENU;
@@ -399,7 +364,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
         
         // 2. ATOMIC UPDATE: Create Order AND Lock Table instantly
-        // This prevents the "gap" where order exists but table is available
+        // Using functional updates ensures we are working with the latest state,
+        // solving race conditions.
         setOrders(prev => [...prev, newOrder]);
         setTables(prev => prev.map(t => 
              t.id === tableId 
@@ -435,20 +401,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
         await batch.commit();
     } else {
+        // Local Mode Order Update
         setOrders(prev => prev.map(o => {
             if (o.id !== orderId) return o;
             return { ...o, ...updates };
         }));
         
-        // Manual Table Release for Local Mode
+        // Robust Table Release: Find table by currentOrderId matches
+        // This is safer than finding order then finding table, as it relies on table pointer.
         if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
-             const order = orders.find(o => o.id === orderId);
-             if (order) {
-                setTables(prev => prev.map(t => t.id === order.tableId ? { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined } : t));
-             }
+             setTables(prev => prev.map(t => 
+                t.currentOrderId === orderId 
+                ? { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined } 
+                : t
+             ));
         }
         
+        // Stock restoration on cancel
         if (status === OrderStatus.CANCELLED) {
+             // We need the order details to restore stock.
+             // Accessing 'orders' state here directly is safe as this function 
+             // is recreated on render with fresh state closure.
              const order = orders.find(o => o.id === orderId);
              if (order) {
                  setMenu(prevMenu => prevMenu.map(m => {
