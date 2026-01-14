@@ -33,18 +33,16 @@ interface StoreContextType {
   removePosition: (position: string) => void;
   movePosition: (position: string, direction: 'up' | 'down') => void;
   resetSystem: () => void;
-  isCloudMode: boolean; // New status indicator
+  isCloudMode: boolean;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
-// Enhance initial menu with default dailyStock
 const ENHANCED_INITIAL_MENU = INITIAL_MENU.map(item => ({
   ...item,
-  dailyStock: -1 // Default unlimited
+  dailyStock: -1 
 }));
 
-// LocalStorage Keys
 const KEYS = {
   TABLES: 'TRIAD_TABLES_V5',
   ORDERS: 'TRIAD_ORDERS_V5',
@@ -119,55 +117,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return [];
   });
 
-  // --- CRITICAL FIX: Robust Table Synchronization ---
-  // This effect ensures Tables are ALWAYS consistent with Orders.
-  // It fixes the bug where tables reset to empty or orders disappear.
-  useEffect(() => {
-    if (isCloudMode) return;
-
-    setTables(prevTables => {
-        // 1. Map active orders to their tables
-        const activeOrderMap = new Map<string, string>(); // TableID -> OrderID
-        
-        // Sort orders by time (newest first) to ensure we get the LATEST active order
-        const sortedOrders = [...orders].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-        sortedOrders.forEach(o => {
-            const isWorking = o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED;
-            if (isWorking && !activeOrderMap.has(o.tableId)) {
-                activeOrderMap.set(o.tableId, o.id);
-            }
-        });
-
-        // 2. Enforce consistency on Tables
-        let hasUpdates = false;
-        const nextTables = prevTables.map(t => {
-            const activeOrderId = activeOrderMap.get(t.id);
-            
-            // Case A: Table SHOULD be Occupied (Order exists)
-            if (activeOrderId) {
-                // If currently Available OR Order ID mismatch, FORCE update
-                if (t.status === TableStatus.AVAILABLE || t.currentOrderId !== activeOrderId) {
-                    hasUpdates = true;
-                    return { ...t, status: TableStatus.OCCUPIED, currentOrderId: activeOrderId };
-                }
-            } 
-            // Case B: Table SHOULD be Available (No active order)
-            else {
-                // If currently Occupied, FORCE release
-                if (t.status !== TableStatus.AVAILABLE) {
-                    hasUpdates = true;
-                    return { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined };
-                }
-            }
-            return t;
-        });
-
-        // Only trigger re-render if actual changes occurred
-        return hasUpdates ? nextTables : prevTables;
-    });
-
-  }, [orders, isCloudMode]);
+  // --- REMOVED THE PROBLEMATIC SELF-HEALING USE_EFFECT HERE ---
+  // We now rely on explicit state updates in createOrder/updateOrderStatus 
+  // to ensure stability and prevent disappearing orders.
 
   const [menu, setMenu] = useState<MenuItem[]>(() => {
     if (isCloudMode) return ENHANCED_INITIAL_MENU;
@@ -408,10 +360,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return newInventory;
         });
         
-        // 1. Add the order
+        // --- ATOMIC UPDATE FOR LOCAL MODE ---
+        // 1. Add Order
         setOrders(prev => [...prev, newOrder]);
-        
-        // 2. Optimistically lock the table immediately (The useEffect will confirm this later)
+        // 2. Lock Table
         setTables(prev => prev.map(t => t.id === tableId ? { ...t, status: TableStatus.OCCUPIED, currentOrderId: newOrder.id } : t));
     }
   };
@@ -432,7 +384,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 batch.update(doc(db!, 'tables', targetTableId), { status: TableStatus.AVAILABLE, currentOrderId: null });
             } 
             if (status === OrderStatus.CANCELLED && order) {
-                 // Restore Stock Logic (Simplified)
                  order.items.forEach(item => {
                     const m = menu.find(x => x.id === item.menuItemId);
                     if(m && m.dailyStock !== -1) {
@@ -448,8 +399,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             return { ...o, ...updates };
         }));
         
-        // Note: We don't need to manually free the table here for Local Mode. 
-        // The useEffect will see the status changed to COMPLETED/CANCELLED and automatically free the table.
+        // Manual Table Release for Local Mode
+        if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED) {
+             const order = orders.find(o => o.id === orderId);
+             if (order) {
+                setTables(prev => prev.map(t => t.id === order.tableId ? { ...t, status: TableStatus.AVAILABLE, currentOrderId: undefined } : t));
+             }
+        }
         
         if (status === OrderStatus.CANCELLED) {
              const order = orders.find(o => o.id === orderId);

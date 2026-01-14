@@ -1,10 +1,10 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
 import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle } from 'lucide-react';
 
-// --- KanbanColumn Defined OUTSIDE the main component to prevent re-renders ---
-const KanbanColumn = React.memo(({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, tables }: any) => {
+// Standard Component (Removed React.memo to prevent stale props issues)
+const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, tables }: any) => {
     
     // Permission: Owner, Staff, Chef can act
     const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
@@ -76,24 +76,21 @@ const KanbanColumn = React.memo(({ title, items, icon: Icon, colorClass, nextSta
         </div>
       </div>
     );
-});
+};
 
 export const KitchenView: React.FC = () => {
   const { orders, updateOrderStatus, tables, currentUser } = useStore();
   
-  // UseMemo to prevent flickering during rapid state updates
-  const activeOrders = useMemo(() => {
-    if (!orders) return [];
-    return orders.filter(o => 
-      o.status !== OrderStatus.CANCELLED && 
-      o.status !== OrderStatus.COMPLETED &&
-      o.status !== OrderStatus.WAITING_PAYMENT
-    );
-  }, [orders]);
+  // Simplified Logic: Direct filtering
+  const activeOrders = orders.filter(o => 
+    o.status !== OrderStatus.CANCELLED && 
+    o.status !== OrderStatus.COMPLETED &&
+    o.status !== OrderStatus.WAITING_PAYMENT
+  );
   
-  const pendingOrders = useMemo(() => activeOrders.filter(o => o.status === OrderStatus.PENDING), [activeOrders]);
-  const cookingOrders = useMemo(() => activeOrders.filter(o => o.status === OrderStatus.COOKING), [activeOrders]);
-  const servingOrders = useMemo(() => activeOrders.filter(o => o.status === OrderStatus.SERVING), [activeOrders]);
+  const pendingOrders = activeOrders.filter(o => o.status === OrderStatus.PENDING);
+  const cookingOrders = activeOrders.filter(o => o.status === OrderStatus.COOKING);
+  const servingOrders = activeOrders.filter(o => o.status === OrderStatus.SERVING);
 
   return (
     <div className="h-full flex flex-col">
