@@ -166,57 +166,52 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       
       try {
           console.log("Checking Cloud Database Integrity...");
-          const batch = writeBatch(db);
+          const batch = writeBatch(db!);
           let hasUpdates = false;
 
           // 1. Check Tables
-          const tablesSnap = await getDocs(collection(db, 'tables'));
+          const tablesSnap = await getDocs(collection(db!, 'tables'));
           if (tablesSnap.empty) {
               console.log("Initializing Cloud Tables...");
               const initialTables = generateTables();
               initialTables.forEach(t => {
-                  batch.set(doc(db, 'tables', t.id), t);
+                  batch.set(doc(db!, 'tables', t.id), t);
               });
               hasUpdates = true;
           }
 
           // 2. Check Menu
-          const menuSnap = await getDocs(collection(db, 'menu'));
+          const menuSnap = await getDocs(collection(db!, 'menu'));
           if (menuSnap.empty) {
               console.log("Initializing Cloud Menu...");
               ENHANCED_INITIAL_MENU.forEach(m => {
-                  batch.set(doc(db, 'menu', m.id), m);
+                  batch.set(doc(db!, 'menu', m.id), m);
               });
               hasUpdates = true;
           }
 
           // 3. Check Inventory
-          const invSnap = await getDocs(collection(db, 'inventory'));
+          const invSnap = await getDocs(collection(db!, 'inventory'));
           if (invSnap.empty) {
               console.log("Initializing Cloud Inventory...");
               INITIAL_INGREDIENTS.forEach(i => {
-                  batch.set(doc(db, 'inventory', i.id), i);
+                  batch.set(doc(db!, 'inventory', i.id), i);
               });
               hasUpdates = true;
           }
 
           // 4. Check Staff
-          const staffSnap = await getDocs(collection(db, 'staff'));
+          const staffSnap = await getDocs(collection(db!, 'staff'));
           if (staffSnap.empty) {
               console.log("Initializing Cloud Staff...");
               MOCK_USERS.forEach(u => {
-                  batch.set(doc(db, 'staff', u.id), u);
+                  batch.set(doc(db!, 'staff', u.id), u);
               });
               hasUpdates = true;
           }
 
-          // 5. Configs
-          const posSnap = await getDocs(collection(db, 'config')); // Simplified check
-          // Assuming if positions are missing we add them
-          // Note: 'config' is a collection, 'positions' is a doc
-          // We can just blindly set if we want, but let's be safe.
-          // For simplicity in this fix, we won't check deep config here, usually tables/menu are the blockers.
-
+          // 5. Configs - Skipped complex check to avoid unused variables error
+          
           if (hasUpdates) {
               await batch.commit();
               console.log("Cloud Database Initialized Successfully!");
@@ -450,25 +445,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                              dailyStock: Math.max(0, menuItem.dailyStock - orderItem.quantity) 
                          });
                     }
-                    // Update Ingredients
-                    menuItem.ingredients.forEach(ingName => {
-                        const invItem = inventory.find(i => i.name === ingName);
-                        if (invItem) {
-                            // Calculate total deduction for this ingredient across all order items? 
-                            // Current logic iterates per orderItem. It's safer to calculate total delta first, 
-                            // but standard Firestore batch can handle multiple updates to diff docs.
-                            // However, writing to SAME doc multiple times in one batch is allowed but overwrites.
-                            // Better: we won't calculate delta here to keep simple, assuming ingredients are unique per menu item logic or just accept last write wins?
-                            // Actually, Firestore batch limits 500 ops.
-                            // To be safe and correct: We must calculate total delta per ingredient ID first.
-                        }
-                    });
+                    // Update Ingredients - Simplified for demo
                 }
             });
-            
-            // Simplified Ingredient Update for Cloud (Batch logic is complex for aggregation)
-            // For this demo, we will rely on the fact that inventory updates are "Eventual Consistent" or handle strictly
-            // Better approach: Just commit the order and table first. Inventory strictness is secondary in KDS.
             
             await batch.commit();
             console.log("Cloud Order Committed.");
@@ -570,10 +549,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     }
   };
-
-  // ... (Keep existing update functions mostly as is, ensuring isCloudMode checks exist) ...
-  // Simplified for brevity - Assume all other add/update functions follow the same pattern:
-  // if (isCloudMode && db) { await setDoc(...) } else { setState(...) }
 
   const addMenuItem = async (item: MenuItem) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), item);
@@ -699,7 +674,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (direction === 'down' && index === availablePositions.length - 1) return;
     
     if (isCloudMode && db) {
-        // Simple swap logic for cloud requires read-modify-write, assuming list is small:
         const newPositions = [...availablePositions];
         const swapIndex = direction === 'up' ? index - 1 : index + 1;
         [newPositions[index], newPositions[swapIndex]] = [newPositions[swapIndex], newPositions[index]];
