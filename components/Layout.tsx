@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
-import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity, Cloud, CloudOff } from 'lucide-react';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity, Cloud, CloudOff, AlertTriangle } from 'lucide-react';
 
 export const Layout: React.FC = () => {
-  const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, isCloudMode } = useStore();
+  const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, inventory, isCloudMode } = useStore();
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -59,11 +59,45 @@ export const Layout: React.FC = () => {
     setDailyMenu(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
   };
 
+  // Helper to calculate max portions based on inventory
+  const getMaxPossibleStock = (item: MenuItem) => {
+    if (!item.ingredients || item.ingredients.length === 0) return 999;
+    
+    let maxPortions = 9999;
+    
+    // We assume 1 portion consumes 1 unit of each listed ingredient (Simplified logic from createOrder)
+    // If you have recipes with quantities, logic would be: Math.floor(inv.quantity / recipe.required)
+    
+    item.ingredients.forEach(ingName => {
+        const invItem = inventory.find(i => i.name === ingName);
+        if (invItem) {
+            if (invItem.quantity < maxPortions) maxPortions = invItem.quantity;
+        } else {
+            // Missing ingredient entirely
+            maxPortions = 0;
+        }
+    });
+
+    return maxPortions;
+  };
+
   const updateStockQuantity = (id: string, delta: number) => {
     setDailyMenu(prev => prev.map(item => {
         if (item.id !== id) return item;
+        
+        const maxPossible = getMaxPossibleStock(item);
         const currentStock = item.dailyStock === -1 ? 0 : item.dailyStock;
-        const newStock = Math.max(0, currentStock + delta);
+        let newStock = currentStock + delta;
+        
+        // Validation Logic
+        if (newStock < 0) newStock = 0;
+        
+        // If trying to increase beyond inventory limits
+        if (delta > 0 && newStock > maxPossible) {
+           // We can either clamp it or allow it with warning. 
+           // User request implies "syncing", so let's clamp it to prevent over-promising.
+           newStock = maxPossible; 
+        }
         
         const newAvailability = newStock > 0;
         
@@ -236,7 +270,7 @@ export const Layout: React.FC = () => {
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                   <Coffee /> ตั้งค่าเมนูประจำวัน
                 </h2>
-                <p className="text-red-200 text-sm mt-1">กำหนดจำนวนขายและสถานะเมนูสำหรับวันนี้</p>
+                <p className="text-red-200 text-sm mt-1">ระบบจะคำนวณจำนวนที่ขายได้สูงสุดจากสต็อกวัตถุดิบ (Max Possible)</p>
               </div>
               <button onClick={() => setShowOpenModal(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors">
                 <X />
@@ -272,7 +306,12 @@ export const Layout: React.FC = () => {
                         {category}
                      </h3>
                      <div className="grid grid-cols-2 gap-4">
-                       {categoryItems.map(item => (
+                       {categoryItems.map(item => {
+                         const maxPossible = getMaxPossibleStock(item);
+                         const isStockLow = maxPossible < 5;
+                         const isUnlimited = item.dailyStock === -1;
+                         
+                         return (
                          <div key={item.id} className={`bg-white p-4 rounded-xl border-2 transition-all ${item.isAvailable ? 'border-green-500/30' : 'border-stone-200 bg-stone-50'}`}>
                             <div className="flex justify-between items-start mb-3">
                                <div>
@@ -280,18 +319,29 @@ export const Layout: React.FC = () => {
                                   <div className="text-xs text-stone-500">{item.category}</div>
                                </div>
                                <button 
-                                 onClick={() => updateDailyItem(item.id, { isAvailable: !item.isAvailable })}
+                                 onClick={() => {
+                                     // Toggle logic
+                                     const willBeAvailable = !item.isAvailable;
+                                     if(willBeAvailable && maxPossible === 0) {
+                                         alert("วัตถุดิบหมด! ไม่สามารถเปิดขายได้");
+                                         return;
+                                     }
+                                     updateDailyItem(item.id, { isAvailable: willBeAvailable });
+                                 }}
                                  className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${item.isAvailable ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
                                >
-                                 {item.isAvailable ? 'พร้อมขาย' : 'หมด/ไม่ขาย'}
+                                 {item.isAvailable ? 'พร้อมขาย' : 'ปิด'}
                                </button>
                             </div>
                             
                             <div className="bg-stone-50 p-3 rounded-lg border border-stone-100">
                               <div className="flex items-center justify-between mb-2">
-                                 <span className="text-xs font-medium text-stone-500">จำนวนขายวันนี้ (ชิ้น)</span>
-                                 <span className="text-xs text-stone-400 whitespace-nowrap">
-                                  {item.dailyStock === -1 ? '(ไม่จำกัด)' : 'จำกัดจำนวน'}
+                                 <span className="text-xs font-medium text-stone-500 flex items-center gap-1">
+                                    จำนวนขายวันนี้ 
+                                    {isStockLow && <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1 rounded">(วัตถุดิบต่ำ)</span>}
+                                 </span>
+                                 <span className="text-xs text-stone-400 whitespace-nowrap font-bold">
+                                   Max: {maxPossible}
                                  </span>
                               </div>
                               
@@ -313,7 +363,9 @@ export const Layout: React.FC = () => {
                                           if (valStr === '' || valStr === '0') {
                                             updateDailyItem(item.id, { dailyStock: 0, isAvailable: false });
                                           } else {
-                                            updateDailyItem(item.id, { dailyStock: parseInt(valStr), isAvailable: true });
+                                            let val = parseInt(valStr);
+                                            if (val > maxPossible) val = maxPossible; // Clamp Input
+                                            updateDailyItem(item.id, { dailyStock: val, isAvailable: true });
                                           }
                                         }}
                                         className="w-full text-center outline-none text-base font-bold bg-transparent no-spinner text-stone-800 placeholder-stone-300"
@@ -321,36 +373,54 @@ export const Layout: React.FC = () => {
 
                                       <button 
                                         onClick={() => updateStockQuantity(item.id, 1)}
-                                        className="w-10 h-full flex items-center justify-center text-stone-500 hover:text-green-600 hover:bg-green-50 transition-colors border-l border-stone-200 active:bg-green-100"
+                                        disabled={!isUnlimited && item.dailyStock >= maxPossible}
+                                        className="w-10 h-full flex items-center justify-center text-stone-500 hover:text-green-600 hover:bg-green-50 transition-colors border-l border-stone-200 active:bg-green-100 disabled:bg-stone-100 disabled:text-stone-300"
                                       >
                                         <Plus size={16} strokeWidth={2.5} />
                                       </button>
                                   </div>
                                   
                                   <button
-                                    onClick={() => updateDailyItem(item.id, { dailyStock: -1, isAvailable: true })}
+                                    onClick={() => {
+                                        if (maxPossible > 0) {
+                                            updateDailyItem(item.id, { dailyStock: -1, isAvailable: true });
+                                        } else {
+                                            alert("วัตถุดิบหมด! ไม่สามารถตั้งเป็น Unlimited ได้");
+                                        }
+                                    }}
                                     className={`h-10 aspect-square flex items-center justify-center rounded-lg border transition-colors shadow-sm ${item.dailyStock === -1 ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-stone-300 text-stone-400 hover:bg-stone-50'}`}
-                                    title="ไม่จำกัด (Unlimited)"
+                                    title={maxPossible > 0 ? "ไม่จำกัด (Unlimited)" : "วัตถุดิบหมด"}
                                   >
                                     <Infinity size={20} />
                                   </button>
                               </div>
                               
-                              <div className="flex gap-1 mt-2">
+                              {item.dailyStock === -1 && maxPossible < 100 && (
+                                  <div className="mt-2 text-[10px] text-orange-600 bg-orange-50 p-1 rounded border border-orange-100 flex items-center gap-1">
+                                      <AlertTriangle size={10} />
+                                      <span>คำเตือน: วัตถุดิบทำได้เพียง {maxPossible} ที่</span>
+                                  </div>
+                              )}
+                              
+                              {item.dailyStock !== -1 && (
+                                <div className="flex gap-1 mt-2">
                                  {[5, 10, 20].map(val => (
                                    <button
                                      key={val}
                                      onClick={() => updateStockQuantity(item.id, val)}
-                                     className="flex-1 py-1.5 bg-white border border-stone-200 rounded-lg text-xs font-bold text-stone-500 hover:text-green-600 hover:border-green-200 hover:bg-green-50 transition-colors shadow-sm"
+                                     disabled={item.dailyStock + val > maxPossible}
+                                     className="flex-1 py-1.5 bg-white border border-stone-200 rounded-lg text-xs font-bold text-stone-500 hover:text-green-600 hover:border-green-200 hover:bg-green-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                    >
                                      +{val}
                                    </button>
                                  ))}
-                              </div>
+                                </div>
+                              )}
 
                             </div>
                          </div>
-                       ))}
+                       );
+                       })}
                      </div>
                    </div>
                  );

@@ -5,7 +5,7 @@ import { Role, User } from '../types';
 import { STAFF_CLASSES } from '../constants';
 
 export const StaffManagement: React.FC = () => {
-  const { staffList, addStaff, updateStaff, terminateStaff, availablePositions, addPosition, removePosition, movePosition, currentUser } = useStore();
+  const { staffList, addStaff, updateStaff, terminateStaff, deleteStaff, availablePositions, addPosition, removePosition, movePosition, currentUser } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [showPositionModal, setShowPositionModal] = useState(false);
   const [viewHistory, setViewHistory] = useState(false); // Toggle active/inactive
@@ -37,6 +37,13 @@ export const StaffManagement: React.FC = () => {
         setFormData(prev => ({ ...prev, role: getRoleFromPosition(prev.position!) }));
     }
   }, [formData.position]);
+
+  // Ensure form defaults to first available position if current is invalid/empty when positions load
+  useEffect(() => {
+    if (availablePositions.length > 0 && (!formData.position || !availablePositions.includes(formData.position))) {
+       setFormData(prev => ({ ...prev, position: availablePositions[0] }));
+    }
+  }, [availablePositions]);
 
   // Permission Check for ACCESSING the page
   // Originally restricted to OWNER, but now Manager (who is OWNER role) can access.
@@ -89,6 +96,12 @@ export const StaffManagement: React.FC = () => {
     if (confirm(`คุณต้องการเลิกจ้าง/ลบสิทธิ์การใช้งานของ ${user.name} ใช่หรือไม่?`)) {
       terminateStaff(user.id);
     }
+  };
+  
+  const handleHardDelete = (user: User) => {
+     if (confirm(`คำเตือน: คุณกำลังจะลบข้อมูลของ "${user.name}" อย่างถาวร!\n\nข้อมูลนี้จะไม่สามารถกู้คืนได้ คุณแน่ใจหรือไม่?`)) {
+         deleteStaff(user.id);
+     }
   };
 
   const handleAddPosition = () => {
@@ -233,6 +246,7 @@ export const StaffManagement: React.FC = () => {
                       value={formData.position}
                       onChange={e => setFormData({...formData, position: e.target.value})}
                    >
+                      {availablePositions.length === 0 && <option>Loading...</option>}
                       {availablePositions.map(p => <option key={p} value={p}>{p}</option>)}
                    </select>
                 </div>
@@ -345,8 +359,8 @@ export const StaffManagement: React.FC = () => {
                 <td className="p-4 text-sm text-stone-600">{s.startDate}</td>
                 {viewHistory && <td className="p-4 text-sm text-red-600 font-bold">{s.endDate || '-'}</td>}
                 
-                <td className="p-4">
-                  {!viewHistory && (
+                <td className="p-4 text-center">
+                  {!viewHistory ? (
                   <div className="flex justify-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
                      <button 
                        onClick={() => handleEditClick(s)}
@@ -365,8 +379,19 @@ export const StaffManagement: React.FC = () => {
                        </button>
                      )}
                   </div>
+                  ) : (
+                      // INACTIVE STAFF ACTIONS (Restore / Hard Delete)
+                      <div className="flex justify-center gap-2">
+                        <span className="text-xs text-stone-400 self-center mr-2">Inactive</span>
+                        <button 
+                           onClick={() => handleHardDelete(s)}
+                           className="p-2 bg-stone-100 text-stone-500 rounded-lg hover:bg-red-600 hover:text-white transition-all"
+                           title="ลบถาวร (Hard Delete)"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                      </div>
                   )}
-                  {viewHistory && <span className="text-xs text-center block text-stone-400">Inactive</span>}
                 </td>
               </tr>
             )})}

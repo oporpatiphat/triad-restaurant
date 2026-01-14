@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem, Role } from '../types';
 import { generateTables, INITIAL_INGREDIENTS, INITIAL_MENU, MOCK_USERS, INITIAL_POSITIONS } from '../constants';
 import { db, isCloudEnabled } from './firebaseConfig';
-import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, writeBatch, Timestamp, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, writeBatch, Timestamp, query, orderBy, getDocs, getDoc } from 'firebase/firestore';
 
 interface StoreContextType {
   currentUser: User | null;
@@ -29,6 +29,7 @@ interface StoreContextType {
   addStaff: (user: User) => void;
   updateStaff: (user: User) => void;
   terminateStaff: (userId: string) => void;
+  deleteStaff: (userId: string) => void;
   availablePositions: string[];
   addPosition: (position: string) => void;
   removePosition: (position: string) => void;
@@ -208,6 +209,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               MOCK_USERS.forEach(u => {
                   batch.set(doc(db!, 'staff', u.id), u);
               });
+              hasUpdates = true;
+          }
+
+          // 5. Configs (Positions) - Check if exists
+          const positionsRef = doc(db!, 'config', 'positions');
+          const positionsDoc = await getDoc(positionsRef);
+          if (!positionsDoc.exists()) {
+              console.log("Initializing Cloud Positions...");
+              batch.set(positionsRef, { list: INITIAL_POSITIONS });
               hasUpdates = true;
           }
 
@@ -668,6 +678,19 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     }
   };
+  // NEW: Hard Delete Staff
+  const deleteStaff = async (userId: string) => {
+    if (isCloudMode && db) {
+        await deleteDoc(doc(db!, 'staff', userId));
+    } else {
+        setStaffList(prev => {
+            const next = prev.filter(u => u.id !== userId);
+            saveToStorage(KEYS.STAFF, next);
+            return next;
+        });
+    }
+  };
+
   const addPosition = async (position: string) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'config', 'positions'), { list: [...availablePositions, position] });
     else {
@@ -720,7 +743,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       orders, createOrder, updateOrderStatus,
       menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,
       inventory, updateIngredientQuantity, addIngredient, removeIngredient,
-      staffList, addStaff, updateStaff, terminateStaff,
+      staffList, addStaff, updateStaff, terminateStaff, deleteStaff,
       availablePositions, addPosition, removePosition, movePosition,
       resetSystem, runSelfHealing, isCloudMode, initializeCloudData
     }}>
