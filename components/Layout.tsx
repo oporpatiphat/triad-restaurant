@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
-import { LayoutDashboard, Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Briefcase, Infinity, AlertTriangle } from 'lucide-react';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;

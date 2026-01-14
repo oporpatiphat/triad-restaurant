@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem } from '../types';
-import { Utensils, Users, CheckCircle, Search, X, DollarSign, Wallet, CreditCard, Banknote, Plus, Minus, AlertOctagon } from 'lucide-react';
+import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon } from 'lucide-react';
 
 export const FloorPlan: React.FC = () => {
   const { tables, menu, inventory, createOrder, updateOrderStatus, orders } = useStore();

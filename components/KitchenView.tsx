@@ -18,7 +18,7 @@ export const KitchenView: React.FC = () => {
 
   const getTableNumber = (tableId: string) => tables.find(t => t.id === tableId)?.number || '??';
 
-  const KanbanColumn = ({ title, status, items, icon: Icon, colorClass, nextStatus, actionLabel, roleRequired, isAlert }: any) => {
+  const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert }: any) => {
     // Permission Logic:
     // Simply check if user is OWNER (Admin/Manager) or STAFF (Employee)
     // Both roles should be able to operate the KDS (Kitchen Display System)

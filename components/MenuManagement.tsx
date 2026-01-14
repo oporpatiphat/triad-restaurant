@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Coffee, Plus, ToggleLeft, ToggleRight, X, Image, Tag, FileText, DollarSign, CheckSquare } from 'lucide-react';
+import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare } from 'lucide-react';
 import { MenuItem } from '../types';
 
 export const MenuManagement: React.FC = () => {

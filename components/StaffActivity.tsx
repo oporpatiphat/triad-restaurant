@@ -1,7 +1,7 @@
 import React from 'react';
 import { useStore } from '../services/StoreContext';
 import { Activity, User as UserIcon, ChefHat, Utensils, CheckCircle, Clock } from 'lucide-react';
-import { OrderStatus, Role, User } from '../types';
+import { OrderStatus, User } from '../types';
 
 const StaffCard: React.FC<{ staff: User }> = ({ staff }) => {
   const { orders, tables } = useStore();

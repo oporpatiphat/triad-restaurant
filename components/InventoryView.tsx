@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Refrigerator, AlertTriangle, Minus, Plus, PlusCircle, X, Save, Trash2, Eye, Package, Archive, Layers, CheckCircle } from 'lucide-react';
+import { Refrigerator, AlertTriangle, Minus, Plus, PlusCircle, X, Save, Trash2, Eye, Package, Layers, CheckCircle } from 'lucide-react';
 import { Ingredient, IngredientCategory, Role } from '../types';
 
 export const InventoryView: React.FC = () => {
@@ -167,7 +167,6 @@ export const InventoryView: React.FC = () => {
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {items.map(item => {
                         const isLow = item.quantity <= 5;
-                        const styleClass = getCategoryColor(category);
                         
                         return (
                            <div key={item.id} className={`group bg-white rounded-xl p-4 border transition-all hover:shadow-lg relative overflow-hidden ${isLow ? 'border-red-300 shadow-red-100' : 'border-stone-200 shadow-sm'}`}>
