@@ -1,9 +1,9 @@
 import React from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
-import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle } from 'lucide-react';
+import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package } from 'lucide-react';
 
-const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, tables }: any) => {
+const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables }: any) => {
     
     // Permission: Owner, Staff, Chef can act
     const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
@@ -13,6 +13,12 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
         if (!tables) return '??';
         const t = tables.find((t: any) => t.id === tableId);
         return t ? t.number : '??';
+    };
+
+    const handleCancel = (orderId: string) => {
+        if(confirm("ยืนยันการยกเลิกออเดอร์นี้? โต๊ะจะกลับเป็นสถานะว่าง")) {
+            cancelOrder(orderId);
+        }
     };
     
     return (
@@ -26,8 +32,20 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
         </div>
         <div className={`flex-1 overflow-y-auto p-3 space-y-3 ${isAlert ? 'bg-red-50' : 'bg-stone-50/50'}`}>
           {items.map((order: Order) => (
-            <div key={order.id} className={`bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition-shadow ${isAlert ? 'border-red-200 shadow-red-100' : 'border-stone-200'}`}>
-               <div className="flex justify-between items-start mb-3">
+            <div key={order.id} className={`bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition-shadow relative group ${isAlert ? 'border-red-200 shadow-red-100' : 'border-stone-200'}`}>
+               
+               {/* Cancel Button (Visible on Hover or always visible on mobile) */}
+               {!isRestricted && (
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); handleCancel(order.id); }}
+                     className="absolute top-3 right-3 text-stone-300 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors"
+                     title="ยกเลิกออเดอร์ (Cancel Order)"
+                   >
+                       <X size={16} />
+                   </button>
+               )}
+
+               <div className="flex justify-between items-start mb-3 pr-6">
                   <div>
                     <span className={`text-xs font-bold px-2 py-1 rounded ${isAlert ? 'bg-red-100 text-red-700' : 'text-stone-500 bg-stone-100'}`}>โต๊ะ {getTableNumber(order.tableId)}</span>
                     <div className="font-bold text-stone-800 mt-1">{order.customerName}</div>
@@ -36,13 +54,33 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                   <span className="text-xs text-stone-400 font-mono">{new Date(order.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                </div>
                
-               <div className="space-y-1 mb-4 border-t border-b border-stone-100 py-2">
-                 {order.items.map((item, idx) => (
-                   <div key={idx} className="flex gap-2 text-sm text-stone-700">
-                     <span className="font-bold text-stone-900">x{item.quantity}</span>
-                     <span>{item.name}</span>
+               {/* Box Fee Badge */}
+               {order.hasBoxFee && (
+                   <div className="mb-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100 inline-flex items-center gap-1 font-bold">
+                       <Package size={12} /> ใส่กล่อง (+100)
                    </div>
-                 ))}
+               )}
+
+               <div className="space-y-1 mb-4 border-t border-b border-stone-100 py-2">
+                 {order.items.map((item, idx) => {
+                   const isCookingPhase = order.status === OrderStatus.COOKING;
+                   
+                   return (
+                   <div key={idx} className={`flex items-start gap-2 text-sm ${item.isCooked ? 'opacity-50' : 'text-stone-700'}`}>
+                     {isCookingPhase && !isRestricted ? (
+                         <button onClick={() => toggleItemCookedStatus(order.id, idx)} className="mt-0.5 text-stone-400 hover:text-green-600">
+                             {item.isCooked ? <CheckSquare size={16} className="text-green-600"/> : <Square size={16}/>}
+                         </button>
+                     ) : (
+                         <span className="font-bold text-stone-900 mt-0.5">x{item.quantity}</span>
+                     )}
+                     
+                     <span className={item.isCooked ? 'line-through decoration-stone-400' : ''}>
+                        {isCookingPhase && !isRestricted && <span className="font-bold mr-1">x{item.quantity}</span>}
+                        {item.name}
+                     </span>
+                   </div>
+                 )})}
                </div>
 
                {/* Staff Info */}
@@ -79,7 +117,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
 };
 
 export const KitchenView: React.FC = () => {
-  const { orders, updateOrderStatus, tables, currentUser } = useStore();
+  const { orders, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, currentUser } = useStore();
   
   // Safe filtering: Ensure orders is an array before filtering
   const safeOrders = Array.isArray(orders) ? orders : [];
@@ -122,6 +160,7 @@ export const KitchenView: React.FC = () => {
           actionLabel="เริ่มทำ (Start)"
           currentUser={currentUser}
           updateOrderStatus={updateOrderStatus}
+          cancelOrder={cancelOrder}
           tables={tables}
         />
         <KanbanColumn 
@@ -133,6 +172,8 @@ export const KitchenView: React.FC = () => {
           actionLabel="พร้อมเสิร์ฟ (Ready)"
           currentUser={currentUser}
           updateOrderStatus={updateOrderStatus}
+          toggleItemCookedStatus={toggleItemCookedStatus}
+          cancelOrder={cancelOrder}
           tables={tables}
         />
         <KanbanColumn 
@@ -144,6 +185,7 @@ export const KitchenView: React.FC = () => {
           actionLabel="เสิร์ฟแล้ว (Served)"
           currentUser={currentUser}
           updateOrderStatus={updateOrderStatus}
+          cancelOrder={cancelOrder}
           tables={tables}
         />
       </div>

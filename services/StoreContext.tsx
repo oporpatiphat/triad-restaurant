@@ -9,14 +9,16 @@ interface StoreContextType {
   login: (username: string, password?: string) => boolean;
   logout: () => void;
   storeSession: StoreSession;
-  sessionHistory: SessionRecord[]; // New State
+  sessionHistory: SessionRecord[];
   openStore: (dailyMenuUpdates: MenuItem[], openerName: string) => void;
   closeStore: (closerName: string) => void;
   tables: Table[];
   updateTableStatus: (tableId: string, status: TableStatus) => void;
   orders: Order[];
-  createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[]) => Promise<boolean>;
+  createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], hasBoxFee: boolean) => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
+  toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; // New
+  cancelOrder: (orderId: string, reason?: string) => void; // New
   deleteOrder: (orderId: string) => void; 
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
@@ -57,7 +59,7 @@ const KEYS = {
   STAFF: 'TRIAD_STAFF_V8',
   POSITIONS: 'TRIAD_POSITIONS_V8',
   SESSION: 'TRIAD_SESSION_V8',
-  SESSIONS_HISTORY: 'TRIAD_SESSIONS_HISTORY_V1', // New Key
+  SESSIONS_HISTORY: 'TRIAD_SESSIONS_HISTORY_V1',
   USER: 'TRIAD_USER_V8'
 };
 
@@ -245,11 +247,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const unsubSession = onSnapshot(doc(db!, 'config', 'session'), (doc) => {
         if (doc.exists()) setStoreSession(processDoc(doc) as StoreSession);
     });
-    // New: Listen for Session History
     const unsubHistory = onSnapshot(query(collection(db!, 'sessions'), orderBy('openedAt', 'desc')), (snap) => {
         setSessionHistory(snap.docs.map(processDoc) as SessionRecord[]);
     });
-
     const unsubTables = onSnapshot(collection(db!, 'tables'), (snap) => {
         const data = snap.docs.map(processDoc) as Table[];
         const sorted = data.sort((a,b) => {
@@ -340,7 +340,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (isCloudMode && db) {
        const batch = writeBatch(db!);
        batch.set(doc(db!, 'config', 'session'), { isOpen: true, openedAt: new Date() });
-       // Add to history
        batch.set(doc(db!, 'sessions', newSessionRecord.id), newSessionRecord);
        
        dailyMenuUpdates.forEach(m => {
@@ -364,8 +363,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const closeStore = async (closerName: string) => {
-    // Calculate current session stats before closing
-    // We assume orders from "openedAt" until now belong to this session.
     const currentOrders = orders.filter(o => o.timestamp >= storeSession.openedAt);
     const totalSales = currentOrders
         .filter(o => o.status === OrderStatus.COMPLETED)
@@ -376,14 +373,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const batch = writeBatch(db!);
         batch.update(doc(db!, 'config', 'session'), { isOpen: false, closedAt: new Date() });
         
-        // Update the latest open session in history
-        // We need to query for the open session first, but for simplicity in batch:
-        // We might not have the ID easily in Context unless we stored it. 
-        // Strategy: Query active session (where closedAt is null) then update.
-        // Due to async inside batch limitation, we do a separate query first.
         const q = query(collection(db, 'sessions'), orderBy('openedAt', 'desc'));
         const snap = await getDocs(q);
-        const latestSession = snap.docs[0]; // Assuming top is latest
+        const latestSession = snap.docs[0];
 
         if (latestSession && !latestSession.data().closedAt) {
             batch.update(latestSession.ref, {
@@ -393,14 +385,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 orderCount
             });
         }
-
         await batch.commit();
     } else {
         const newSession = { ...storeSession, isOpen: false, closedAt: new Date() };
         setStoreSession(newSession);
         
         setSessionHistory(prev => {
-            // Update the first element (latest session)
             if (prev.length > 0 && !prev[0].closedAt) {
                 const updatedLatest = {
                     ...prev[0],
@@ -432,37 +422,30 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // --- FIX BUG #3: IMPLEMENT RUN TRANSACTION ---
-  const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[]): Promise<boolean> => {
+  const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], hasBoxFee: boolean): Promise<boolean> => {
     try {
+        const boxFee = hasBoxFee ? 100 : 0;
+        const totalAmount = items.reduce((sum, i) => sum + (i.price * i.quantity), 0) + boxFee;
+
         if (isCloudMode && db) {
-            // --- CLOUD MODE WITH TRANSACTION ---
             await runTransaction(db, async (transaction) => {
-                // 1. READ ALL REQUIRED DATA FIRST
                 const tableRef = doc(db!, 'tables', tableId);
                 const tableDoc = await transaction.get(tableRef);
                 if (!tableDoc.exists()) throw "Table does not exist!";
                 
-                // Read Menu Items (to check stock)
                 const menuRefs = items.map(item => doc(db!, 'menu', item.menuItemId));
                 const menuDocs = await Promise.all(menuRefs.map(ref => transaction.get(ref)));
 
-                // Read Ingredients (to check inventory)
-                // First, collect all unique ingredient IDs needed
                 const requiredIngredientIds = new Set<string>();
                 const ingredientUsage = new Map<string, number>();
 
                 menuDocs.forEach((mDoc, idx) => {
                     const mData = mDoc.data() as MenuItem;
                     const orderQty = items[idx].quantity;
-                    // Check Menu Daily Stock
                     if (mData.dailyStock !== -1 && mData.dailyStock < orderQty) {
                         throw `เมนู "${mData.name}" หมดแล้ว หรือไม่พอ (เหลือ ${mData.dailyStock})`;
                     }
-                    // Collect ingredients
                     mData.ingredients.forEach(ingName => {
-                        // Find ID by name from LOCAL state (Lookup map) to get Ref
-                        // Note: Ideally we store ID in menu ingredients, but for now we map by name
                         const ingObj = inventory.find(i => i.name === ingName);
                         if (ingObj) {
                             requiredIngredientIds.add(ingObj.id);
@@ -475,7 +458,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const ingRefs = Array.from(requiredIngredientIds).map(id => doc(db!, 'inventory', id));
                 const ingDocs = await Promise.all(ingRefs.map(ref => transaction.get(ref)));
 
-                // Check Inventory Levels
                 ingDocs.forEach(iDoc => {
                     const iData = iDoc.data() as Ingredient;
                     const needed = ingredientUsage.get(iData.id) || 0;
@@ -484,7 +466,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }
                 });
 
-                // 2. WRITE UPDATES
                 const newOrder: Order = {
                     id: `ord-${Date.now()}`,
                     tableId,
@@ -492,17 +473,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     customerClass,
                     items: items,
                     status: OrderStatus.PENDING,
-                    totalAmount: items.reduce((sum, i) => sum + (i.price * i.quantity), 0),
-                    timestamp: new Date()
+                    totalAmount,
+                    timestamp: new Date(),
+                    hasBoxFee
                 };
 
-                // Create Order
                 transaction.set(doc(db!, 'orders', newOrder.id), newOrder);
-                
-                // Update Table
                 transaction.update(tableRef, { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
 
-                // Update Menu Stock
                 menuDocs.forEach((mDoc, idx) => {
                     const mData = mDoc.data() as MenuItem;
                     const orderQty = items[idx].quantity;
@@ -511,7 +489,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }
                 });
 
-                // Update Inventory
                 ingDocs.forEach(iDoc => {
                     const iData = iDoc.data() as Ingredient;
                     const needed = ingredientUsage.get(iData.id) || 0;
@@ -521,8 +498,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             console.log("Transaction successfully committed!");
             return true;
         } else {
-            // --- LOCAL MODE (Existing Logic) ---
-             // 1. Inventory Check & Calculation
             const requiredIngredients = new Map<string, number>();
             for (const item of items) {
                 const menuItem = menu.find(m => m.id === item.menuItemId);
@@ -553,8 +528,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 customerClass,
                 items: items,
                 status: OrderStatus.PENDING,
-                totalAmount: items.reduce((sum, i) => sum + (i.price * i.quantity), 0),
-                timestamp: new Date()
+                totalAmount,
+                timestamp: new Date(),
+                hasBoxFee
             };
 
             let updatedOrders: Order[] = [];
@@ -637,6 +613,32 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  const toggleItemCookedStatus = async (orderId: string, itemIndex: number) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+    
+    const newItems = [...order.items];
+    const item = newItems[itemIndex];
+    if (item) {
+        item.isCooked = !item.isCooked;
+    }
+
+    if (isCloudMode && db) {
+        await updateDoc(doc(db!, 'orders', orderId), { items: newItems });
+    } else {
+        setOrders(prev => {
+            const next = prev.map(o => o.id === orderId ? { ...o, items: newItems } : o);
+            saveToStorage(KEYS.ORDERS, next);
+            return next;
+        });
+    }
+  };
+
+  // Cancel order logic - similar to updateOrderStatus to CANCELLED but ensures table is freed
+  const cancelOrder = async (orderId: string) => {
+      await updateOrderStatus(orderId, OrderStatus.CANCELLED);
+  };
+
   const deleteOrder = async (orderId: string) => {
     if (isCloudMode && db) {
         await deleteDoc(doc(db!, 'orders', orderId));
@@ -649,7 +651,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // --- FIX BUG #4: Auto-Update Menu Stock when Inventory Added ---
   const updateIngredientQuantity = async (itemId: string, delta: number) => {
     const ingName = inventory.find(i => i.id === itemId)?.name;
     const newQuantity = Math.max(0, (inventory.find(i => i.id === itemId)?.quantity || 0) + delta);
@@ -657,8 +658,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (isCloudMode && db) {
         const batch = writeBatch(db!);
         batch.update(doc(db!, 'inventory', itemId), { quantity: newQuantity });
-        
-        // Auto-recalculate menu stock if stock INCREASED
         if (delta > 0 && ingName) {
             const affectedMenus = menu.filter(m => m.ingredients.includes(ingName) && m.dailyStock !== -1);
             const tempInventory = inventory.map(i => i.id === itemId ? { ...i, quantity: newQuantity } : i);
@@ -681,7 +680,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
         await batch.commit();
     } else {
-        // Local Mode Logic
         const updatedInventory = inventory.map(item => item.id === itemId ? { ...item, quantity: newQuantity } : item);
         setInventory(updatedInventory);
         saveToStorage(KEYS.INVENTORY, updatedInventory);
@@ -690,7 +688,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setMenu(prev => {
                 const next = prev.map(m => {
                     if (m.ingredients.includes(ingName) && m.dailyStock !== -1) {
-                         // Recalculate Max
                          let maxPossible = 9999;
                          m.ingredients.forEach(iName => {
                              const iObj = updatedInventory.find(i => i.name === iName);
@@ -810,7 +807,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     }
   };
-  // NEW: Hard Delete Staff
   const deleteStaff = async (userId: string) => {
     if (isCloudMode && db) {
         await deleteDoc(doc(db!, 'staff', userId));
@@ -872,7 +868,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       currentUser, login, logout,
       storeSession, sessionHistory, openStore, closeStore,
       tables, updateTableStatus,
-      orders, createOrder, updateOrderStatus, deleteOrder,
+      orders, createOrder, updateOrderStatus, toggleItemCookedStatus, cancelOrder, deleteOrder,
       menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,
       inventory, updateIngredientQuantity, addIngredient, removeIngredient,
       staffList, addStaff, updateStaff, terminateStaff, deleteStaff,

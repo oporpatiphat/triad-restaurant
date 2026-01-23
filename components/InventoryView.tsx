@@ -70,7 +70,7 @@ export const InventoryView: React.FC = () => {
     if (!originalItem) return;
     
     const currentDisplay = getDisplayQuantity(originalItem);
-    handleDraftChange(itemId, currentDisplay + delta);
+    handleDraftChange(itemId, Number(currentDisplay) + delta);
   };
 
   const handleSaveChanges = async () => {

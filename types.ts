@@ -57,6 +57,7 @@ export interface OrderItem {
   quantity: number;
   price: number;
   note?: string;
+  isCooked?: boolean; // New: Track individual item progress
 }
 
 export interface Order {
@@ -71,6 +72,7 @@ export interface Order {
   chefName?: string;  // Who cooked it
   serverName?: string; // Who served it
   paymentMethod?: 'CASH' | 'CARD'; // New field
+  hasBoxFee?: boolean; // New: +100 LS$ fee
 }
 
 export type MenuCategory = 'Main Dish' | 'Appetizer' | 'Soup' | 'Drink' | 'Set' | 'Other';

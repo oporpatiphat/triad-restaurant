@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem } from '../types';
-import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon } from 'lucide-react';
+import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package } from 'lucide-react';
 
 export const FloorPlan: React.FC = () => {
   const { tables, menu, inventory, createOrder, updateOrderStatus, orders } = useStore();
@@ -12,6 +12,8 @@ export const FloorPlan: React.FC = () => {
   const [customerClass, setCustomerClass] = useState<CustomerClass>(CustomerClass.MIDDLE);
   const [orderBasket, setOrderBasket] = useState<OrderItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [includeBox, setIncludeBox] = useState(false); // New State for Box Fee
 
   const availableMenu = menu.filter(m => m.isAvailable && m.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -31,6 +33,7 @@ export const FloorPlan: React.FC = () => {
     setSearchTerm('');
     setCustomerName('');
     setCustomerClass(CustomerClass.MIDDLE);
+    setIncludeBox(false);
   };
 
   const addToBasket = (item: MenuItem) => {
@@ -72,12 +75,30 @@ export const FloorPlan: React.FC = () => {
     setOrderBasket(newBasket);
   };
 
-  const submitOrder = () => {
-    if (!selectedTable || orderBasket.length === 0 || !customerName) return;
-    createOrder(selectedTable.id, customerName, customerClass, orderBasket);
-    setSelectedTable(null);
-    setOrderBasket([]);
-    setCustomerName('');
+  const submitOrder = async () => {
+    if (!selectedTable) return;
+    if (orderBasket.length === 0) {
+        alert("กรุณาเลือกรายการอาหาร");
+        return;
+    }
+    if (!customerName) {
+        alert("กรุณาระบุชื่อลูกค้า");
+        return;
+    }
+
+    setIsSubmitting(true);
+    
+    // Await the creation process
+    const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, includeBox);
+    
+    setIsSubmitting(false);
+
+    if (success) {
+        setSelectedTable(null);
+        setOrderBasket([]);
+        setCustomerName('');
+    }
+    // If failed, modal stays open, basket stays intact, alert is shown by createOrder
   };
 
   const handleCheckBill = () => {
@@ -226,10 +247,8 @@ export const FloorPlan: React.FC = () => {
                         // Check Physical Inventory
                         const hasIngredients = item.ingredients.every(ingName => {
                            const stockItem = inventory.find(i => i.name === ingName);
-                           // For now, assume 1 item uses 1 unit of ingredient. 
-                           // If inBasketQty is 0, we check if stock > 0. 
-                           // But if we already have items in basket, we should strictly check against (stock - inBasketQty)
-                           // For simplicity in this view, we check if *any* stock exists.
+                           // Simple check: do we have ANY of this ingredient left?
+                           // Ideally we check (stock - pending basket usage), but for UI speed this is acceptable visual feedback
                            return stockItem && stockItem.quantity > 0;
                         });
 
@@ -389,19 +408,47 @@ export const FloorPlan: React.FC = () => {
                     )
                 ) : (
                     // CURRENT ORDER ITEMS VIEW
-                    currentActiveOrder?.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center p-3 bg-white border border-stone-100 rounded-xl">
-                           <div className="flex gap-2">
-                              <span className="font-bold text-stone-900 text-sm">x{item.quantity}</span>
-                              <span className="text-stone-700 text-sm">{item.name}</span>
-                           </div>
-                           <div className="text-sm font-bold text-stone-600">฿{item.price * item.quantity}</div>
+                    <div className="space-y-2">
+                      {currentActiveOrder?.hasBoxFee && (
+                        <div className="flex justify-between items-center p-3 bg-orange-50 border border-orange-100 rounded-xl">
+                            <div className="flex gap-2 items-center">
+                              <Package size={16} className="text-orange-600"/>
+                              <span className="font-bold text-stone-800 text-sm">ค่ากล่อง (Box Fee)</span>
+                            </div>
+                            <div className="text-sm font-bold text-stone-600">฿100</div>
                         </div>
-                    ))
+                      )}
+                      {currentActiveOrder?.items.map((item, idx) => (
+                          <div key={idx} className="flex justify-between items-center p-3 bg-white border border-stone-100 rounded-xl">
+                            <div className="flex gap-2">
+                                <span className="font-bold text-stone-900 text-sm">x{item.quantity}</span>
+                                <span className="text-stone-700 text-sm">{item.name}</span>
+                            </div>
+                            <div className="text-sm font-bold text-stone-600">฿{item.price * item.quantity}</div>
+                          </div>
+                      ))}
+                    </div>
                 )}
               </div>
 
               <div className="p-6 bg-white border-t border-stone-100">
+                {/* Box Fee Checkbox for New Orders */}
+                {selectedTable.status === TableStatus.AVAILABLE && orderBasket.length > 0 && (
+                   <label className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-stone-200 cursor-pointer hover:bg-stone-50 transition-colors">
+                      <input 
+                        type="checkbox" 
+                        className="w-5 h-5 accent-red-600"
+                        checked={includeBox}
+                        onChange={(e) => setIncludeBox(e.target.checked)}
+                      />
+                      <div className="flex-1">
+                         <span className="text-sm font-bold text-stone-700 block">เพิ่มกล่อง (Box)</span>
+                         <span className="text-xs text-stone-400">คิดค่าบริการเพิ่ม +100 LS$</span>
+                      </div>
+                      <span className="font-bold text-stone-600">+100</span>
+                   </label>
+                )}
+
                 <div className="flex justify-between text-stone-500 mb-2 text-sm">
                    <span>จำนวนรายการ</span>
                    <span>
@@ -414,7 +461,7 @@ export const FloorPlan: React.FC = () => {
                   <span>รวมทั้งสิ้น</span>
                   <span className="text-red-600">฿
                      {(selectedTable.status === TableStatus.AVAILABLE 
-                        ? orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) 
+                        ? orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + (includeBox ? 100 : 0)
                         : currentActiveOrder?.totalAmount || 0).toLocaleString()}
                   </span>
                 </div>
@@ -422,10 +469,11 @@ export const FloorPlan: React.FC = () => {
                 {selectedTable.status === TableStatus.AVAILABLE && (
                     <button 
                       onClick={submitOrder}
-                      disabled={orderBasket.length === 0 || !customerName}
+                      disabled={orderBasket.length === 0 || !customerName || isSubmitting}
                       className="w-full bg-red-600 hover:bg-red-700 disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 text-lg"
                     >
-                      <CheckCircle size={24} /> ยืนยันการสั่ง
+                      {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : <CheckCircle size={24} />}
+                      {isSubmitting ? 'กำลังบันทึก...' : 'ยืนยันการสั่ง'}
                     </button>
                 )}
               </div>
