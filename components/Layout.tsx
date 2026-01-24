@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
-import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Cloud, CloudOff, AlertTriangle, ArrowUpToLine } from 'lucide-react';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Cloud, CloudOff, ArrowUpToLine } from 'lucide-react';
 
 export const Layout: React.FC = () => {
   const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, inventory, isCloudMode } = useStore();
@@ -312,7 +312,6 @@ export const Layout: React.FC = () => {
                        {categoryItems.map(item => {
                          const maxPossible = getMaxPossibleStock(item);
                          const isStockLow = maxPossible < 5;
-                         const isUnlimited = item.dailyStock === -1;
                          
                          return (
                          <div key={item.id} className={`bg-white p-4 rounded-xl border-2 transition-all ${item.isAvailable ? 'border-green-500/30' : 'border-stone-200 bg-stone-50'}`}>
@@ -359,8 +358,8 @@ export const Layout: React.FC = () => {
                                       
                                       <input 
                                         type="number" 
-                                        value={item.dailyStock === -1 ? '' : item.dailyStock === 0 ? '' : item.dailyStock}
-                                        placeholder={item.dailyStock === -1 ? "∞" : "0"}
+                                        value={item.dailyStock === 0 ? '' : item.dailyStock}
+                                        placeholder="0"
                                         onChange={(e) => {
                                           const valStr = e.target.value;
                                           if (valStr === '' || valStr === '0') {
@@ -376,7 +375,7 @@ export const Layout: React.FC = () => {
 
                                       <button 
                                         onClick={() => updateStockQuantity(item.id, 1)}
-                                        disabled={!isUnlimited && item.dailyStock >= maxPossible}
+                                        disabled={item.dailyStock >= maxPossible}
                                         className="w-10 h-full flex items-center justify-center text-stone-500 hover:text-green-600 hover:bg-green-50 transition-colors border-l border-stone-200 active:bg-green-100 disabled:bg-stone-100 disabled:text-stone-300"
                                       >
                                         <Plus size={16} strokeWidth={2.5} />
@@ -391,16 +390,15 @@ export const Layout: React.FC = () => {
                                             alert("วัตถุดิบหมด!");
                                         }
                                     }}
-                                    className={`h-10 w-10 flex items-center justify-center rounded-lg border transition-colors shadow-sm font-bold text-[10px] ${item.dailyStock === maxPossible ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-stone-300 text-stone-500 hover:bg-stone-50'}`}
-                                    title="Set to Max"
+                                    className={`h-10 px-2 flex items-center justify-center gap-1 rounded-lg border transition-colors shadow-sm font-bold text-[10px] ${item.dailyStock === maxPossible ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-stone-300 text-stone-500 hover:bg-stone-50'}`}
+                                    title="Set to Max possible"
                                   >
-                                    MAX
+                                    <ArrowUpToLine size={14} /> MAX
                                   </button>
                               </div>
                               
-                              {/* Removed Infinity warning since we encourage Max usage */}
-                              
-                              {item.dailyStock !== -1 && (
+                              {/* Quick Add Buttons */}
+                              {item.dailyStock >= 0 && (
                                 <div className="flex gap-1 mt-2">
                                  {[5, 10, 20].map(val => (
                                    <button
