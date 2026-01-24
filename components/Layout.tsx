@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
-import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Infinity, Cloud, CloudOff, AlertTriangle } from 'lucide-react';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Cloud, CloudOff, AlertTriangle, ArrowUpToLine } from 'lucide-react';
 
 export const Layout: React.FC = () => {
   const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, inventory, isCloudMode } = useStore();
@@ -386,24 +386,19 @@ export const Layout: React.FC = () => {
                                   <button
                                     onClick={() => {
                                         if (maxPossible > 0) {
-                                            updateDailyItem(item.id, { dailyStock: -1, isAvailable: true });
+                                            updateDailyItem(item.id, { dailyStock: maxPossible, isAvailable: true });
                                         } else {
-                                            alert("วัตถุดิบหมด! ไม่สามารถตั้งเป็น Unlimited ได้");
+                                            alert("วัตถุดิบหมด!");
                                         }
                                     }}
-                                    className={`h-10 aspect-square flex items-center justify-center rounded-lg border transition-colors shadow-sm ${item.dailyStock === -1 ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-stone-300 text-stone-400 hover:bg-stone-50'}`}
-                                    title={maxPossible > 0 ? "ไม่จำกัด (Unlimited)" : "วัตถุดิบหมด"}
+                                    className={`h-10 w-10 flex items-center justify-center rounded-lg border transition-colors shadow-sm font-bold text-[10px] ${item.dailyStock === maxPossible ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-stone-300 text-stone-500 hover:bg-stone-50'}`}
+                                    title="Set to Max"
                                   >
-                                    <Infinity size={20} />
+                                    MAX
                                   </button>
                               </div>
                               
-                              {item.dailyStock === -1 && maxPossible < 100 && (
-                                  <div className="mt-2 text-[10px] text-orange-600 bg-orange-50 p-1 rounded border border-orange-100 flex items-center gap-1">
-                                      <AlertTriangle size={10} />
-                                      <span>คำเตือน: วัตถุดิบทำได้เพียง {maxPossible} ที่</span>
-                                  </div>
-                              )}
+                              {/* Removed Infinity warning since we encourage Max usage */}
                               
                               {item.dailyStock !== -1 && (
                                 <div className="flex gap-1 mt-2">
