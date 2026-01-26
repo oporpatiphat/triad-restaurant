@@ -7,7 +7,7 @@ import { FloorPlan } from './components/FloorPlan';
 import { KitchenView } from './components/KitchenView';
 import { InventoryView } from './components/InventoryView';
 import { AdminDashboard } from './components/AdminDashboard';
-import { MenuManagement } from './components/MenuManagement';
+import MenuManagement from './components/MenuManagement';
 import { StaffManagement } from './components/StaffManagement';
 import { HistoryView } from './components/HistoryView';
 
