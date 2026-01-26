@@ -82,7 +82,7 @@ export const HistoryView: React.FC = () => {
                       {session.closedAt ? session.orderCount : getOrdersForSession(session).length}
                   </td>
                   <td className="p-4 text-right font-bold text-stone-800 text-base">
-                      LS${(session.closedAt ? session.totalSales : getOrdersForSession(session).reduce((sum, o) => sum + o.totalAmount, 0)).toLocaleString()}
+                      ฿{(session.closedAt ? session.totalSales : getOrdersForSession(session).reduce((sum, o) => sum + o.totalAmount, 0)).toLocaleString()}
                   </td>
                   <td className="p-4 text-center">
                      {session.closedAt ? (
@@ -134,7 +134,7 @@ export const HistoryView: React.FC = () => {
              </div>
              <div className="ml-auto bg-stone-800 text-white px-4 py-2 rounded-lg shadow-lg">
                  <span className="text-xs text-stone-400 block uppercase font-bold">ยอดขายรอบนี้</span>
-                 <span className="text-xl font-bold">LS${totalInView.toLocaleString()}</span>
+                 <span className="text-xl font-bold">฿{totalInView.toLocaleString()}</span>
              </div>
          </div>
 
@@ -182,7 +182,7 @@ export const HistoryView: React.FC = () => {
                           </span>
                         ) : <span className="text-stone-300">-</span>}
                       </td>
-                      <td className="p-4 text-right font-bold text-stone-800 text-base">LS${o.totalAmount.toLocaleString()}</td>
+                      <td className="p-4 text-right font-bold text-stone-800 text-base">฿{o.totalAmount.toLocaleString()}</td>
                       <td className="p-4 text-center">
                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${o.status === 'COMPLETED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                           {o.status}
@@ -298,7 +298,7 @@ export const HistoryView: React.FC = () => {
                        
                        <div className="flex justify-between items-center text-xl font-bold bg-stone-50 p-3 rounded-lg border border-stone-100">
                           <span className="text-stone-800">ยอดสุทธิ</span>
-                          <span className="text-red-600">LS${selectedOrder.totalAmount.toLocaleString()}</span>
+                          <span className="text-red-600">฿{selectedOrder.totalAmount.toLocaleString()}</span>
                        </div>
                     </div>
                  </div>

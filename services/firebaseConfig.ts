@@ -8,19 +8,13 @@ import { getFirestore } from "firebase/firestore";
 // 4. ไปที่เมนู Firestore Database -> Create Database -> เลือก Start in Test Mode (เพื่อให้เขียนข้อมูลได้โดยไม่ต้องแก้ Rules ในช่วงแรก)
 
 const firebaseConfig = {
-
-  apiKey: "AIzaSyCH0wII5jAtv9G2uJhlcpZ6kf4JupscyaA",
-
-  authDomain: "triad-restaurant.firebaseapp.com",
-
-  projectId: "triad-restaurant",
-
-  storageBucket: "triad-restaurant.firebasestorage.app",
-
-  messagingSenderId: "741573397234",
-
-  appId: "1:741573397234:web:591abb7b6a2fd7f0a85e6b"
-
+  // --- นำค่าจาก Firebase ของคุณมาแทนที่ตรงนี้ ---
+  apiKey: "YOUR_API_KEY_HERE",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "SENDER_ID",
+  appId: "APP_ID"
 };
 
 // ตรวจสอบว่าได้ใส่ Key จริงหรือยัง (ถ้ายังเป็น YOUR_API_KEY_HERE ถือว่ายังไม่พร้อม)

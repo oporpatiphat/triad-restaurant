@@ -15,10 +15,10 @@ interface StoreContextType {
   tables: Table[];
   updateTableStatus: (tableId: string, status: TableStatus) => void;
   orders: Order[];
-  createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, hasBag: boolean) => Promise<boolean>;
+  createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], hasBoxFee: boolean) => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
-  toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; 
-  cancelOrder: (orderId: string, reason?: string) => void; 
+  toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; // New
+  cancelOrder: (orderId: string, reason?: string) => void; // New
   deleteOrder: (orderId: string) => void; 
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
@@ -112,29 +112,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const saved = localStorage.getItem(KEYS.TABLES);
       if (saved) {
-        let parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed;
-        }
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch(e) {}
     return generateTables();
   });
-
-  // FIX: Force inject Delivery tables if missing (Local Mode)
-  useEffect(() => {
-    if (!isCloudMode && tables.length > 0) {
-        const hasDelivery = tables.some(t => t.floor === 'DELIVERY');
-        if (!hasDelivery) {
-            const freshTables = generateTables();
-            const deliveryTables = freshTables.filter(t => t.floor === 'DELIVERY');
-            const newTables = [...tables, ...deliveryTables];
-            setTables(newTables);
-            saveToStorage(KEYS.TABLES, newTables);
-            console.log("Auto-fixed: Injected missing Delivery tables");
-        }
-    }
-  }, [tables.length, isCloudMode]);
 
   const [orders, setOrders] = useState<Order[]>(() => {
     if (isCloudMode) return [];
@@ -379,7 +362,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // FIX: Robust CloseStore to prevent crash if history is missing or corrupted
   const closeStore = async (closerName: string) => {
     const currentOrders = orders.filter(o => o.timestamp >= storeSession.openedAt);
     const totalSales = currentOrders
@@ -409,8 +391,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setStoreSession(newSession);
         
         setSessionHistory(prev => {
-            // Safety Check: Ensure there is a history record to update
-            if (prev.length > 0 && prev[0] && !prev[0].closedAt) {
+            if (prev.length > 0 && !prev[0].closedAt) {
                 const updatedLatest = {
                     ...prev[0],
                     closedAt: new Date(),
@@ -422,7 +403,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 saveToStorage(KEYS.SESSIONS_HISTORY, next);
                 return next;
             }
-            // If no previous history found but we are closing, just return prev to prevent crash
             return prev;
         });
 
@@ -442,9 +422,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, hasBag: boolean): Promise<boolean> => {
+  const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], hasBoxFee: boolean): Promise<boolean> => {
     try {
-        const boxFee = boxCount * 100;
+        const boxFee = hasBoxFee ? 100 : 0;
         const totalAmount = items.reduce((sum, i) => sum + (i.price * i.quantity), 0) + boxFee;
 
         if (isCloudMode && db) {
@@ -495,8 +475,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     status: OrderStatus.PENDING,
                     totalAmount,
                     timestamp: new Date(),
-                    boxCount,
-                    hasBag
+                    hasBoxFee
                 };
 
                 transaction.set(doc(db!, 'orders', newOrder.id), newOrder);
@@ -551,8 +530,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 status: OrderStatus.PENDING,
                 totalAmount,
                 timestamp: new Date(),
-                boxCount,
-                hasBag
+                hasBoxFee
             };
 
             let updatedOrders: Order[] = [];
@@ -656,133 +634,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // FIX: Safe CancelOrder - Forces cancellation even if restock logic fails
+  // Cancel order logic - similar to updateOrderStatus to CANCELLED but ensures table is freed
   const cancelOrder = async (orderId: string) => {
-      const order = orders.find(o => o.id === orderId);
-      if (!order) return;
-
-      // 1. Force update status FIRST to ensure UI reflects cancellation
-      updateOrderStatus(orderId, OrderStatus.CANCELLED);
-
-      // 2. Attempt Restock Logic (Try-Catch to prevent crash if items deleted)
-      try {
-          if (isCloudMode && db) {
-              await runTransaction(db, async (transaction) => {
-                 const orderRef = doc(db!, 'orders', orderId);
-                 const tableRef = doc(db!, 'tables', order.tableId);
-
-                 // Calculate Restore
-                 const ingredientsToRestore = new Map<string, number>(); 
-                 const menuStockToRestore = new Map<string, number>(); 
-
-                 const menuDocs = await getDocs(collection(db!, 'menu'));
-                 const invDocs = await getDocs(collection(db!, 'inventory'));
-                 
-                 const menuMap = new Map();
-                 menuDocs.forEach(d => menuMap.set(d.id, { ...d.data(), ref: d.ref }));
-                 
-                 const invMapByName = new Map(); 
-                 invDocs.forEach(d => {
-                     const data = d.data() as Ingredient;
-                     invMapByName.set(data.name, { id: d.id, quantity: data.quantity, ref: d.ref });
-                 });
-
-                 for (const item of order.items) {
-                     const mItem = menuMap.get(item.menuItemId);
-                     if (mItem) {
-                         if (mItem.dailyStock !== -1) {
-                             const current = menuStockToRestore.get(mItem.id) || 0;
-                             menuStockToRestore.set(mItem.id, current + item.quantity);
-                         }
-                         if (mItem.ingredients) {
-                             mItem.ingredients.forEach((ingName: string) => {
-                                 const invItem = invMapByName.get(ingName);
-                                 if (invItem) {
-                                     const current = ingredientsToRestore.get(invItem.id) || 0;
-                                     ingredientsToRestore.set(invItem.id, current + item.quantity);
-                                 }
-                             });
-                         }
-                     }
-                 }
-
-                 // IMPORTANT: We already updated status via updateOrderStatus, but doing it in DB too
-                 transaction.update(orderRef, { status: OrderStatus.CANCELLED });
-                 transaction.update(tableRef, { status: TableStatus.AVAILABLE, currentOrderId: null });
-
-                 for (const [id, qty] of menuStockToRestore.entries()) {
-                     const mItem = menuMap.get(id);
-                     if(mItem) transaction.update(mItem.ref, { dailyStock: mItem.dailyStock + qty });
-                 }
-
-                 for (const [id, qty] of ingredientsToRestore.entries()) {
-                     const invRef = doc(db!, 'inventory', id);
-                     const invDoc = await transaction.get(invRef);
-                     if(invDoc.exists()) {
-                         const currentQty = invDoc.data().quantity || 0;
-                         transaction.update(invRef, { quantity: currentQty + qty });
-                     }
-                 }
-              });
-              console.log("Order Cancelled and Stock Restored (Cloud)");
-
-          } else {
-              // LOCAL RESTOCK
-              const ingredientsToRestore = new Map<string, number>();
-              const menuStockToRestore = new Map<string, number>();
-
-              for (const item of order.items) {
-                  const mItem = menu.find(m => m.id === item.menuItemId);
-                  // Safety: Only process if menu item still exists
-                  if (mItem) {
-                      if (mItem.dailyStock !== -1) {
-                          const current = menuStockToRestore.get(mItem.id) || 0;
-                          menuStockToRestore.set(mItem.id, current + item.quantity);
-                      }
-                      if (mItem.ingredients) {
-                          mItem.ingredients.forEach(ingName => {
-                              // Safety: Only process if ingredient still exists
-                              const exists = inventory.some(i => i.name === ingName);
-                              if (exists) {
-                                  const current = ingredientsToRestore.get(ingName) || 0;
-                                  ingredientsToRestore.set(ingName, current + item.quantity);
-                              }
-                          });
-                      }
-                  }
-              }
-
-              // Apply Inventory Updates
-              setMenu(prev => {
-                  const next = prev.map(m => {
-                      const restoreQty = menuStockToRestore.get(m.id);
-                      if (restoreQty !== undefined) {
-                          return { ...m, dailyStock: m.dailyStock + restoreQty };
-                      }
-                      return m;
-                  });
-                  saveToStorage(KEYS.MENU, next);
-                  return next;
-              });
-
-              setInventory(prev => {
-                  const next = prev.map(ing => {
-                      const restoreQty = ingredientsToRestore.get(ing.name);
-                      if (restoreQty !== undefined) {
-                          return { ...ing, quantity: ing.quantity + restoreQty };
-                      }
-                      return ing;
-                  });
-                  saveToStorage(KEYS.INVENTORY, next);
-                  return next;
-              });
-          }
-      } catch (e) {
-          console.error("Cancel Order Partial Failure:", e);
-          // Even if stock logic fails, the order status was already updated in step 1.
-          // We alert user that stock might be inconsistent but order is gone.
-          alert("แจ้งเตือน: ยกเลิกออเดอร์แล้ว แต่การคืนสต็อกสินค้าบางรายการล้มเหลว (เนื่องจากข้อมูลถูกลบไปก่อนหน้า)");
-      }
+      await updateOrderStatus(orderId, OrderStatus.CANCELLED);
   };
 
   const deleteOrder = async (orderId: string) => {
