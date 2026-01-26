@@ -207,15 +207,5 @@ export const generateTables = (): Table[] => {
       capacity: 6
     });
   }
-  // NEW: Delivery Zone: D1-D8
-  for (let i = 1; i <= 8; i++) {
-    tables.push({
-      id: `d${i}`,
-      number: `D${i}`,
-      floor: 'DELIVERY',
-      status: TableStatus.AVAILABLE,
-      capacity: 0
-    });
-  }
   return tables;
 };

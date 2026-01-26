@@ -3,7 +3,7 @@ import { useStore } from '../services/StoreContext';
 import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2 } from 'lucide-react';
 import { MenuItem } from '../types';
 
-const MenuManagement: React.FC = () => {
+export const MenuManagement: React.FC = () => {
   const { menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, inventory } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({
@@ -136,11 +136,11 @@ const MenuManagement: React.FC = () => {
                        <DollarSign size={14} className="text-red-500" /> ราคาขาย (Price) <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500 font-bold">LS$</span>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500 font-bold">฿</span>
                       <input 
                         type="number"
                         min="0"
-                        className="w-full border border-stone-300 bg-stone-50 rounded-lg pl-12 pr-4 py-2.5 text-stone-900 font-bold focus:ring-2 focus:ring-red-500 focus:bg-white focus:border-red-500 outline-none transition-all"
+                        className="w-full border border-stone-300 bg-stone-50 rounded-lg pl-10 pr-4 py-2.5 text-stone-900 font-bold focus:ring-2 focus:ring-red-500 focus:bg-white focus:border-red-500 outline-none transition-all"
                         value={newItem.price || ''}
                         onChange={e => setNewItem({...newItem, price: Number(e.target.value)})}
                         required
@@ -288,7 +288,7 @@ const MenuManagement: React.FC = () => {
                                 </div>
                                 <div className="text-right">
                                     <span className="text-[10px] text-stone-400 block uppercase tracking-wider font-bold">Price</span>
-                                    <span className={`font-bold text-2xl ${item.isAvailable ? 'text-red-600' : 'text-stone-400'}`}>LS${item.price}</span>
+                                    <span className={`font-bold text-2xl ${item.isAvailable ? 'text-red-600' : 'text-stone-400'}`}>฿{item.price}</span>
                                 </div>
                             </div>
                         </div>
@@ -301,5 +301,3 @@ const MenuManagement: React.FC = () => {
     </div>
   );
 };
-
-export default MenuManagement;

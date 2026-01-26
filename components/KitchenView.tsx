@@ -1,7 +1,7 @@
 import React from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
-import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag } from 'lucide-react';
+import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package } from 'lucide-react';
 
 const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables }: any) => {
     
@@ -16,7 +16,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
     };
 
     const handleCancel = (orderId: string) => {
-        if(confirm("ยืนยันการยกเลิกออเดอร์นี้? \n\nระบบจะทำการ:\n1. คืนโต๊ะเป็นสถานะว่าง\n2. คืนจำนวนวัตถุดิบเข้าคลัง\n3. คืนโควต้าเมนู (Daily Stock)")) {
+        if(confirm("ยืนยันการยกเลิกออเดอร์นี้? โต๊ะจะกลับเป็นสถานะว่าง")) {
             cancelOrder(orderId);
         }
     };
@@ -54,19 +54,12 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                   <span className="text-xs text-stone-400 font-mono">{new Date(order.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                </div>
                
-               {/* Packaging Badge */}
-               <div className="flex gap-2 mb-2 flex-wrap">
-                   {order.boxCount > 0 && (
-                       <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100 inline-flex items-center gap-1 font-bold">
-                           <Package size={12} /> กล่อง x{order.boxCount}
-                       </div>
-                   )}
-                   {order.hasBag && (
-                       <div className="text-xs text-stone-600 bg-stone-100 px-2 py-1 rounded border border-stone-200 inline-flex items-center gap-1 font-bold">
-                           <ShoppingBag size={12} /> รับถุง
-                       </div>
-                   )}
-               </div>
+               {/* Box Fee Badge */}
+               {order.hasBoxFee && (
+                   <div className="mb-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100 inline-flex items-center gap-1 font-bold">
+                       <Package size={12} /> ใส่กล่อง (+100)
+                   </div>
+               )}
 
                <div className="space-y-1 mb-4 border-t border-b border-stone-100 py-2">
                  {order.items.map((item, idx) => {
