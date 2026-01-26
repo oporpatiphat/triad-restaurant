@@ -55,9 +55,9 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                </div>
                
                {/* Box Fee Badge */}
-               {order.hasBoxFee && (
+               {(order.boxCount || 0) > 0 && (
                    <div className="mb-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100 inline-flex items-center gap-1 font-bold">
-                       <Package size={12} /> ใส่กล่อง (+100)
+                       <Package size={12} /> ใส่กล่อง (x{order.boxCount})
                    </div>
                )}
 

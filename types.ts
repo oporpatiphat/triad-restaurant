@@ -1,4 +1,5 @@
 
+
 export enum Role {
   OWNER = 'OWNER',
   CHEF = 'CHEF',
@@ -28,7 +29,7 @@ export enum TableStatus {
 export interface Table {
   id: string;
   number: string;
-  floor: 'GROUND' | 'UPPER';
+  floor: 'GROUND' | 'UPPER' | 'DELIVERY';
   status: TableStatus;
   capacity: number;
   currentOrderId?: string;
@@ -72,7 +73,8 @@ export interface Order {
   chefName?: string;  // Who cooked it
   serverName?: string; // Who served it
   paymentMethod?: 'CASH' | 'CARD'; // New field
-  hasBoxFee?: boolean; // New: +100 LS$ fee
+  boxCount?: number; // New: Quantity of boxes
+  hasBag?: boolean; // New: Bag request
 }
 
 export type MenuCategory = 'Main Dish' | 'Appetizer' | 'Soup' | 'Drink' | 'Set' | 'Other';

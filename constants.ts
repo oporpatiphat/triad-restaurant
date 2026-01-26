@@ -158,7 +158,6 @@ export const INITIAL_MENU: MenuItem[] = [
   },
 ];
 
-// UPDATED: All units set to 'ชิ้น', Threshold set to 0 (disabled)
 export const INITIAL_INGREDIENTS: Ingredient[] = [
   { id: 'i1', name: 'Brisket', quantity: 50, unit: 'ชิ้น', threshold: 0, category: 'เนื้อสัตว์' },
   { id: 'i2', name: 'Garlic', quantity: 100, unit: 'ชิ้น', threshold: 0, category: 'ผัก' },
@@ -169,7 +168,6 @@ export const INITIAL_INGREDIENTS: Ingredient[] = [
   { id: 'i7', name: 'Onion', quantity: 80, unit: 'ชิ้น', threshold: 0, category: 'ผัก' },
   { id: 'i8', name: 'Sirloin', quantity: 40, unit: 'ชิ้น', threshold: 0, category: 'เนื้อสัตว์' },
   { id: 'i9', name: 'Cucumber', quantity: 50, unit: 'ชิ้น', threshold: 0, category: 'ผัก' },
-  // Wheat moved to Vegetables as requested
   { id: 'i10', name: 'Wheat', quantity: 100, unit: 'ชิ้น', threshold: 0, category: 'ผัก' }, 
   { id: 'i11', name: 'Tenderloin', quantity: 30, unit: 'ชิ้น', threshold: 0, category: 'เนื้อสัตว์' },
   { id: 'i12', name: 'Kidneys', quantity: 30, unit: 'ชิ้น', threshold: 0, category: 'เนื้อสัตว์' },
@@ -187,7 +185,17 @@ export const INITIAL_INGREDIENTS: Ingredient[] = [
 
 export const generateTables = (): Table[] => {
   const tables: Table[] = [];
-  // UPDATED: Ground Floor: T1-T8 (8 tables)
+  // Delivery Zone: D1-D8
+  for (let i = 1; i <= 8; i++) {
+    tables.push({
+      id: `d${i}`,
+      number: `D${i}`,
+      floor: 'DELIVERY' as any,
+      status: TableStatus.AVAILABLE,
+      capacity: 0
+    });
+  }
+  // Ground Floor: T1-T8
   for (let i = 1; i <= 8; i++) {
     tables.push({
       id: `t${i}`,
@@ -197,7 +205,7 @@ export const generateTables = (): Table[] => {
       capacity: 4
     });
   }
-  // UPDATED: Upper Floor: T9-T18 (10 tables)
+  // Upper Floor: T9-T18
   for (let i = 9; i <= 18; i++) {
     tables.push({
       id: `t${i}`,
