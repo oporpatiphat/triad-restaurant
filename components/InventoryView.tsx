@@ -78,7 +78,7 @@ export const InventoryView: React.FC = () => {
     for (const [id, newQty] of Object.entries(pendingChanges)) {
         const originalItem = inventory.find(i => i.id === id);
         if (originalItem) {
-            const delta = newQty - originalItem.quantity;
+            const delta = Number(newQty) - originalItem.quantity;
             if (delta !== 0) {
                 // We use existing context function which takes delta
                 await updateIngredientQuantity(id, delta);

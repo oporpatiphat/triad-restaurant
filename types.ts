@@ -28,7 +28,7 @@ export enum TableStatus {
 export interface Table {
   id: string;
   number: string;
-  floor: 'GROUND' | 'UPPER';
+  floor: 'GROUND' | 'UPPER' | 'DELIVERY';
   status: TableStatus;
   capacity: number;
   currentOrderId?: string;
@@ -72,7 +72,8 @@ export interface Order {
   chefName?: string;  // Who cooked it
   serverName?: string; // Who served it
   paymentMethod?: 'CASH' | 'CARD'; // New field
-  hasBoxFee?: boolean; // New: +100 LS$ fee
+  boxCount: number; // Replaced hasBoxFee
+  hasBag: boolean;  // New field
 }
 
 export type MenuCategory = 'Main Dish' | 'Appetizer' | 'Soup' | 'Drink' | 'Set' | 'Other';

@@ -15,10 +15,10 @@ interface StoreContextType {
   tables: Table[];
   updateTableStatus: (tableId: string, status: TableStatus) => void;
   orders: Order[];
-  createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], hasBoxFee: boolean) => Promise<boolean>;
+  createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, hasBag: boolean) => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
-  toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; // New
-  cancelOrder: (orderId: string, reason?: string) => void; // New
+  toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; 
+  cancelOrder: (orderId: string, reason?: string) => void; 
   deleteOrder: (orderId: string) => void; 
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
@@ -422,9 +422,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], hasBoxFee: boolean): Promise<boolean> => {
+  const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, hasBag: boolean): Promise<boolean> => {
     try {
-        const boxFee = hasBoxFee ? 100 : 0;
+        const boxFee = boxCount * 100;
         const totalAmount = items.reduce((sum, i) => sum + (i.price * i.quantity), 0) + boxFee;
 
         if (isCloudMode && db) {
@@ -475,7 +475,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     status: OrderStatus.PENDING,
                     totalAmount,
                     timestamp: new Date(),
-                    hasBoxFee
+                    boxCount,
+                    hasBag
                 };
 
                 transaction.set(doc(db!, 'orders', newOrder.id), newOrder);
@@ -530,7 +531,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 status: OrderStatus.PENDING,
                 totalAmount,
                 timestamp: new Date(),
-                hasBoxFee
+                boxCount,
+                hasBag
             };
 
             let updatedOrders: Order[] = [];
@@ -634,9 +636,130 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // Cancel order logic - similar to updateOrderStatus to CANCELLED but ensures table is freed
+  // RESTOCK LOGIC IMPLEMENTATION
   const cancelOrder = async (orderId: string) => {
-      await updateOrderStatus(orderId, OrderStatus.CANCELLED);
+      const order = orders.find(o => o.id === orderId);
+      if (!order) return;
+
+      try {
+          if (isCloudMode && db) {
+              await runTransaction(db, async (transaction) => {
+                 const orderRef = doc(db!, 'orders', orderId);
+                 const tableRef = doc(db!, 'tables', order.tableId);
+
+                 // 1. Calculate items to restore
+                 const ingredientsToRestore = new Map<string, number>(); // ID -> Qty
+                 const menuStockToRestore = new Map<string, number>(); // ID -> Qty
+
+                 // Get latest state
+                 const menuDocs = await getDocs(collection(db!, 'menu'));
+                 const invDocs = await getDocs(collection(db!, 'inventory'));
+                 
+                 const menuMap = new Map();
+                 menuDocs.forEach(d => menuMap.set(d.id, { ...d.data(), ref: d.ref }));
+                 
+                 const invMapByName = new Map(); // Name -> {id, qty, ref}
+                 invDocs.forEach(d => {
+                     const data = d.data() as Ingredient;
+                     invMapByName.set(data.name, { id: d.id, quantity: data.quantity, ref: d.ref });
+                 });
+
+                 for (const item of order.items) {
+                     const mItem = menuMap.get(item.menuItemId);
+                     if (mItem) {
+                         // Restore Daily Stock
+                         if (mItem.dailyStock !== -1) {
+                             const current = menuStockToRestore.get(mItem.id) || 0;
+                             menuStockToRestore.set(mItem.id, current + item.quantity);
+                         }
+
+                         // Calculate Ingredients
+                         if (mItem.ingredients) {
+                             mItem.ingredients.forEach((ingName: string) => {
+                                 const invItem = invMapByName.get(ingName);
+                                 if (invItem) {
+                                     const current = ingredientsToRestore.get(invItem.id) || 0;
+                                     ingredientsToRestore.set(invItem.id, current + item.quantity);
+                                 }
+                             });
+                         }
+                     }
+                 }
+
+                 // 2. Perform Updates
+                 transaction.update(orderRef, { status: OrderStatus.CANCELLED });
+                 transaction.update(tableRef, { status: TableStatus.AVAILABLE, currentOrderId: null });
+
+                 // Restore Menu Stock
+                 for (const [id, qty] of menuStockToRestore.entries()) {
+                     const mItem = menuMap.get(id);
+                     transaction.update(mItem.ref, { dailyStock: mItem.dailyStock + qty });
+                 }
+
+                 // Restore Ingredients
+                 for (const [id, qty] of ingredientsToRestore.entries()) {
+                     const invRef = doc(db!, 'inventory', id);
+                     const invDoc = await transaction.get(invRef); // Read again inside tx
+                     if(invDoc.exists()) {
+                         const currentQty = invDoc.data().quantity || 0;
+                         transaction.update(invRef, { quantity: currentQty + qty });
+                     }
+                 }
+              });
+              console.log("Order Cancelled and Stock Restored (Cloud)");
+
+          } else {
+              // LOCAL RESTOCK
+              const ingredientsToRestore = new Map<string, number>(); // Name -> Qty
+              const menuStockToRestore = new Map<string, number>(); // ID -> Qty
+
+              for (const item of order.items) {
+                  const mItem = menu.find(m => m.id === item.menuItemId);
+                  if (mItem) {
+                      if (mItem.dailyStock !== -1) {
+                          const current = menuStockToRestore.get(mItem.id) || 0;
+                          menuStockToRestore.set(mItem.id, current + item.quantity);
+                      }
+                      if (mItem.ingredients) {
+                          mItem.ingredients.forEach(ingName => {
+                              const current = ingredientsToRestore.get(ingName) || 0;
+                              ingredientsToRestore.set(ingName, current + item.quantity);
+                          });
+                      }
+                  }
+              }
+
+              // Apply Updates
+              updateOrderStatus(orderId, OrderStatus.CANCELLED);
+
+              setMenu(prev => {
+                  const next = prev.map(m => {
+                      const restoreQty = menuStockToRestore.get(m.id);
+                      if (restoreQty) {
+                          return { ...m, dailyStock: m.dailyStock + restoreQty };
+                      }
+                      return m;
+                  });
+                  saveToStorage(KEYS.MENU, next);
+                  return next;
+              });
+
+              setInventory(prev => {
+                  const next = prev.map(ing => {
+                      const restoreQty = ingredientsToRestore.get(ing.name);
+                      if (restoreQty) {
+                          return { ...ing, quantity: ing.quantity + restoreQty };
+                      }
+                      return ing;
+                  });
+                  saveToStorage(KEYS.INVENTORY, next);
+                  return next;
+              });
+          }
+      } catch (e) {
+          console.error("Cancel Order Error:", e);
+          alert("เกิดข้อผิดพลาดในการยกเลิกและคืนสต็อก: " + e);
+      }
   };
 
   const deleteOrder = async (orderId: string) => {

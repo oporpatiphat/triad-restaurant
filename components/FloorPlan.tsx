@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem } from '../types';
-import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package } from 'lucide-react';
+import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package, Bike, ShoppingBag } from 'lucide-react';
 
 export const FloorPlan: React.FC = () => {
   const { tables, menu, inventory, createOrder, updateOrderStatus, orders } = useStore();
@@ -13,7 +13,10 @@ export const FloorPlan: React.FC = () => {
   const [orderBasket, setOrderBasket] = useState<OrderItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [includeBox, setIncludeBox] = useState(false); // New State for Box Fee
+  
+  // Packaging State
+  const [boxCount, setBoxCount] = useState(0);
+  const [hasBag, setHasBag] = useState(false);
 
   const availableMenu = menu.filter(m => m.isAvailable && m.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -33,7 +36,8 @@ export const FloorPlan: React.FC = () => {
     setSearchTerm('');
     setCustomerName('');
     setCustomerClass(CustomerClass.MIDDLE);
-    setIncludeBox(false);
+    setBoxCount(0);
+    setHasBag(false);
   };
 
   const addToBasket = (item: MenuItem) => {
@@ -89,7 +93,7 @@ export const FloorPlan: React.FC = () => {
     setIsSubmitting(true);
     
     // Await the creation process
-    const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, includeBox);
+    const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, boxCount, hasBag);
     
     setIsSubmitting(false);
 
@@ -134,13 +138,17 @@ export const FloorPlan: React.FC = () => {
     return 'ไม่ว่าง';
   }
 
-  const renderFloorSection = (floor: 'GROUND' | 'UPPER', title: string) => (
+  const renderFloorSection = (floor: 'GROUND' | 'UPPER' | 'DELIVERY', title: string) => (
     <div className="mb-10">
-      <h3 className="text-xl font-bold text-stone-600 mb-4 px-2 border-l-4 border-red-600">{title}</h3>
+      <h3 className={`text-xl font-bold text-stone-600 mb-4 px-2 border-l-4 flex items-center gap-2 ${floor === 'DELIVERY' ? 'border-orange-500' : 'border-red-600'}`}>
+         {floor === 'DELIVERY' && <Bike size={24} className="text-orange-600" />}
+         {title}
+      </h3>
       <div className="grid grid-cols-4 gap-8">
         {tables.filter(t => t.floor === floor).map(table => {
           const order = orders.find(o => o.id === table.currentOrderId);
           const isWaitingPay = order?.status === OrderStatus.WAITING_PAYMENT;
+          const isDelivery = floor === 'DELIVERY';
           
           return (
           <button
@@ -149,20 +157,29 @@ export const FloorPlan: React.FC = () => {
             className={`group relative aspect-square rounded-[2rem] border-4 transition-all duration-300 transform hover:-translate-y-2 hover:shadow-2xl flex flex-col items-center justify-center
               ${getTableStatusColor(table)}`}
           >
-            {/* Chair Decoration */}
-            <div className={`absolute -top-3 w-1/2 h-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
-            <div className={`absolute -bottom-3 w-1/2 h-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
-            <div className={`absolute -left-3 h-1/2 w-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
-            <div className={`absolute -right-3 h-1/2 w-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+            {/* Delivery Visual Indicator */}
+            {isDelivery && <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold bg-orange-100 text-orange-600 px-2 rounded-full">DELIVERY</div>}
+
+            {/* Chair Decoration (Only for Tables) */}
+            {!isDelivery && (
+                <>
+                <div className={`absolute -top-3 w-1/2 h-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+                <div className={`absolute -bottom-3 w-1/2 h-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+                <div className={`absolute -left-3 h-1/2 w-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+                <div className={`absolute -right-3 h-1/2 w-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+                </>
+            )}
 
             <div className="text-5xl font-heading font-bold mb-1">{table.number}</div>
             <div className={`text-sm font-bold uppercase mb-2 ${table.status === TableStatus.AVAILABLE ? 'text-green-600' : isWaitingPay ? 'text-blue-600' : 'text-red-600'}`}>
                 {getTableStatusText(table)}
             </div>
             
-            <div className="flex items-center gap-1.5 text-sm font-medium opacity-60 bg-white/50 px-3 py-1 rounded-full">
-              <Users size={16} /> {table.capacity}
-            </div>
+            {!isDelivery && (
+                <div className="flex items-center gap-1.5 text-sm font-medium opacity-60 bg-white/50 px-3 py-1 rounded-full">
+                  <Users size={16} /> {table.capacity}
+                </div>
+            )}
             
             {/* Status Dot */}
             <div className={`absolute top-4 right-4 w-4 h-4 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-green-500' : isWaitingPay ? 'bg-blue-500 animate-bounce' : 'bg-red-500'} ring-4 ring-white`}></div>
@@ -187,7 +204,7 @@ export const FloorPlan: React.FC = () => {
             <div className="p-2 bg-red-100 rounded-lg text-red-600">
               <Utensils size={32} />
             </div>
-            <span>ผังที่นั่ง</span>
+            <span>ผังที่นั่ง & Delivery</span>
           </h2>
           <p className="text-stone-500 mt-1 ml-16">จัดการสถานะโต๊ะและรับออเดอร์</p>
         </div>
@@ -198,6 +215,7 @@ export const FloorPlan: React.FC = () => {
         <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#a8a29e 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
         
         <div className="relative z-10">
+          {renderFloorSection('DELIVERY', 'โซนเดลิเวอรี่ (Delivery Zone)')}
           {renderFloorSection('GROUND', 'ชั้นล่าง (Ground Floor)')}
           {renderFloorSection('UPPER', 'ชั้นบน (Upper Floor)')}
         </div>
@@ -409,15 +427,27 @@ export const FloorPlan: React.FC = () => {
                 ) : (
                     // CURRENT ORDER ITEMS VIEW
                     <div className="space-y-2">
-                      {currentActiveOrder?.hasBoxFee && (
+                      {/* Box Info */}
+                      {(currentActiveOrder?.boxCount || 0) > 0 && (
                         <div className="flex justify-between items-center p-3 bg-orange-50 border border-orange-100 rounded-xl">
                             <div className="flex gap-2 items-center">
                               <Package size={16} className="text-orange-600"/>
-                              <span className="font-bold text-stone-800 text-sm">ค่ากล่อง (Box Fee)</span>
+                              <span className="font-bold text-stone-800 text-sm">ค่ากล่อง x {currentActiveOrder?.boxCount}</span>
                             </div>
-                            <div className="text-sm font-bold text-stone-600">฿100</div>
+                            <div className="text-sm font-bold text-stone-600">฿{(currentActiveOrder?.boxCount || 0) * 100}</div>
                         </div>
                       )}
+                      {/* Bag Info */}
+                      {currentActiveOrder?.hasBag && (
+                        <div className="flex justify-between items-center p-3 bg-stone-50 border border-stone-100 rounded-xl">
+                            <div className="flex gap-2 items-center">
+                              <ShoppingBag size={16} className="text-stone-600"/>
+                              <span className="font-bold text-stone-800 text-sm">รับถุง (Bag)</span>
+                            </div>
+                            <div className="text-sm font-bold text-stone-600">ฟรี</div>
+                        </div>
+                      )}
+
                       {currentActiveOrder?.items.map((item, idx) => (
                           <div key={idx} className="flex justify-between items-center p-3 bg-white border border-stone-100 rounded-xl">
                             <div className="flex gap-2">
@@ -432,21 +462,38 @@ export const FloorPlan: React.FC = () => {
               </div>
 
               <div className="p-6 bg-white border-t border-stone-100">
-                {/* Box Fee Checkbox for New Orders */}
+                {/* Packaging Section for New Orders */}
                 {selectedTable.status === TableStatus.AVAILABLE && orderBasket.length > 0 && (
-                   <label className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-stone-200 cursor-pointer hover:bg-stone-50 transition-colors">
-                      <input 
-                        type="checkbox" 
-                        className="w-5 h-5 accent-red-600"
-                        checked={includeBox}
-                        onChange={(e) => setIncludeBox(e.target.checked)}
-                      />
-                      <div className="flex-1">
-                         <span className="text-sm font-bold text-stone-700 block">เพิ่มกล่อง (Box)</span>
-                         <span className="text-xs text-stone-400">คิดค่าบริการเพิ่ม +100 LS$</span>
+                   <div className="mb-4 space-y-3 p-3 bg-stone-50 rounded-xl border border-stone-100">
+                      <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-stone-500 uppercase">Packaging</span>
                       </div>
-                      <span className="font-bold text-stone-600">+100</span>
-                   </label>
+                      
+                      {/* Box Input */}
+                      <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                             <Package size={18} className="text-orange-500"/>
+                             <span className="text-sm font-bold text-stone-700">กล่อง (100฿)</span>
+                          </div>
+                          <div className="flex items-center bg-white rounded border border-stone-200">
+                             <button onClick={() => setBoxCount(Math.max(0, boxCount-1))} className="px-2 py-1 hover:bg-stone-100 text-stone-500"><Minus size={14}/></button>
+                             <span className="w-8 text-center text-sm font-bold">{boxCount}</span>
+                             <button onClick={() => setBoxCount(boxCount+1)} className="px-2 py-1 hover:bg-stone-100 text-stone-500"><Plus size={14}/></button>
+                          </div>
+                      </div>
+
+                      {/* Bag Checkbox */}
+                      <label className="flex items-center gap-2 cursor-pointer">
+                          <div className={`w-5 h-5 rounded border flex items-center justify-center ${hasBag ? 'bg-stone-800 border-stone-800 text-white' : 'bg-white border-stone-300'}`}>
+                             {hasBag && <CheckCircle size={14} />}
+                          </div>
+                          <input type="checkbox" className="hidden" checked={hasBag} onChange={e => setHasBag(e.target.checked)} />
+                          <div className="flex-1 flex justify-between">
+                             <span className="text-sm font-bold text-stone-700">รับถุง (Bag)</span>
+                             <span className="text-xs font-bold text-green-600 bg-green-50 px-2 rounded">ฟรี</span>
+                          </div>
+                      </label>
+                   </div>
                 )}
 
                 <div className="flex justify-between text-stone-500 mb-2 text-sm">
@@ -461,7 +508,7 @@ export const FloorPlan: React.FC = () => {
                   <span>รวมทั้งสิ้น</span>
                   <span className="text-red-600">฿
                      {(selectedTable.status === TableStatus.AVAILABLE 
-                        ? orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + (includeBox ? 100 : 0)
+                        ? orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + (boxCount * 100)
                         : currentActiveOrder?.totalAmount || 0).toLocaleString()}
                   </span>
                 </div>
