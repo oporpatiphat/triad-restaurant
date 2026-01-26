@@ -144,7 +144,7 @@ export const FloorPlan: React.FC = () => {
          {floor === 'DELIVERY' && <Bike size={24} className="text-orange-600" />}
          {title}
       </h3>
-      <div className="grid grid-cols-4 gap-8">
+      <div className={`grid gap-8 ${floor === 'DELIVERY' ? 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4'}`}>
         {tables.filter(t => t.floor === floor).map(table => {
           const order = orders.find(o => o.id === table.currentOrderId);
           const isWaitingPay = order?.status === OrderStatus.WAITING_PAYMENT;

@@ -114,19 +114,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (saved) {
         let parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-            // FIX: Ensure Delivery tables exist for old data
-            const hasDelivery = parsed.some((t: any) => t.floor === 'DELIVERY');
-            if (!hasDelivery) {
-                const freshTables = generateTables();
-                const deliveryTables = freshTables.filter(t => t.floor === 'DELIVERY');
-                parsed = [...parsed, ...deliveryTables];
-            }
             return parsed;
         }
       }
     } catch(e) {}
     return generateTables();
   });
+
+  // FIX: Force check for Delivery tables on load
+  useEffect(() => {
+    if (!isCloudMode && tables.length > 0) {
+        const hasDelivery = tables.some(t => t.floor === 'DELIVERY');
+        if (!hasDelivery) {
+            const freshTables = generateTables();
+            const deliveryTables = freshTables.filter(t => t.floor === 'DELIVERY');
+            const newTables = [...tables, ...deliveryTables];
+            setTables(newTables);
+            saveToStorage(KEYS.TABLES, newTables);
+            console.log("Auto-fixed: Injected missing Delivery tables");
+        }
+    }
+  }, [tables.length, isCloudMode]);
 
   const [orders, setOrders] = useState<Order[]>(() => {
     if (isCloudMode) return [];
@@ -371,6 +379,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  // FIX: Robust CloseStore to prevent crash if history is missing
   const closeStore = async (closerName: string) => {
     const currentOrders = orders.filter(o => o.timestamp >= storeSession.openedAt);
     const totalSales = currentOrders
@@ -400,7 +409,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setStoreSession(newSession);
         
         setSessionHistory(prev => {
-            if (prev.length > 0 && !prev[0].closedAt) {
+            // Safety check: ensure prev exists and has at least one item before accessing [0]
+            if (prev.length > 0 && prev[0] && !prev[0].closedAt) {
                 const updatedLatest = {
                     ...prev[0],
                     closedAt: new Date(),
@@ -645,20 +655,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // RESTOCK LOGIC IMPLEMENTATION (Fixed for Safety)
+  // FIX: RESTOCK LOGIC - Added safety checks for deleted items
   const cancelOrder = async (orderId: string) => {
       const order = orders.find(o => o.id === orderId);
       if (!order) return;
 
       try {
           if (isCloudMode && db) {
+              // ... cloud transaction (kept same but safe) ...
               await runTransaction(db, async (transaction) => {
                  const orderRef = doc(db!, 'orders', orderId);
                  const tableRef = doc(db!, 'tables', order.tableId);
 
                  // 1. Calculate items to restore
-                 const ingredientsToRestore = new Map<string, number>(); // ID -> Qty
-                 const menuStockToRestore = new Map<string, number>(); // ID -> Qty
+                 const ingredientsToRestore = new Map<string, number>(); 
+                 const menuStockToRestore = new Map<string, number>(); 
 
                  // Get latest state
                  const menuDocs = await getDocs(collection(db!, 'menu'));
@@ -667,7 +678,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                  const menuMap = new Map();
                  menuDocs.forEach(d => menuMap.set(d.id, { ...d.data(), ref: d.ref }));
                  
-                 const invMapByName = new Map(); // Name -> {id, qty, ref}
+                 const invMapByName = new Map(); 
                  invDocs.forEach(d => {
                      const data = d.data() as Ingredient;
                      invMapByName.set(data.name, { id: d.id, quantity: data.quantity, ref: d.ref });
@@ -676,13 +687,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                  for (const item of order.items) {
                      const mItem = menuMap.get(item.menuItemId);
                      if (mItem) {
-                         // Restore Daily Stock
                          if (mItem.dailyStock !== -1) {
                              const current = menuStockToRestore.get(mItem.id) || 0;
                              menuStockToRestore.set(mItem.id, current + item.quantity);
                          }
-
-                         // Calculate Ingredients
                          if (mItem.ingredients) {
                              mItem.ingredients.forEach((ingName: string) => {
                                  const invItem = invMapByName.get(ingName);
@@ -695,22 +703,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                      }
                  }
 
-                 // 2. Perform Updates
                  transaction.update(orderRef, { status: OrderStatus.CANCELLED });
                  transaction.update(tableRef, { status: TableStatus.AVAILABLE, currentOrderId: null });
 
-                 // Restore Menu Stock
                  for (const [id, qty] of menuStockToRestore.entries()) {
                      const mItem = menuMap.get(id);
-                     if(mItem) { // Safety check
-                        transaction.update(mItem.ref, { dailyStock: mItem.dailyStock + qty });
-                     }
+                     if(mItem) transaction.update(mItem.ref, { dailyStock: mItem.dailyStock + qty });
                  }
 
-                 // Restore Ingredients
                  for (const [id, qty] of ingredientsToRestore.entries()) {
                      const invRef = doc(db!, 'inventory', id);
-                     const invDoc = await transaction.get(invRef); // Read again inside tx
+                     const invDoc = await transaction.get(invRef);
                      if(invDoc.exists()) {
                          const currentQty = invDoc.data().quantity || 0;
                          transaction.update(invRef, { quantity: currentQty + qty });
@@ -721,8 +724,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
           } else {
               // LOCAL RESTOCK (Safe Version)
-              const ingredientsToRestore = new Map<string, number>(); // Name -> Qty
-              const menuStockToRestore = new Map<string, number>(); // ID -> Qty
+              const ingredientsToRestore = new Map<string, number>();
+              const menuStockToRestore = new Map<string, number>();
 
               for (const item of order.items) {
                   const mItem = menu.find(m => m.id === item.menuItemId);
@@ -733,7 +736,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                       }
                       if (mItem.ingredients) {
                           mItem.ingredients.forEach(ingName => {
-                              // Ensure ingredient exists in current inventory to avoid error
+                              // FIX: Safety check - if ingredient deleted, just skip it
                               const exists = inventory.some(i => i.name === ingName);
                               if (exists) {
                                   const current = ingredientsToRestore.get(ingName) || 0;
@@ -745,6 +748,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               }
 
               // Apply Updates
+              // Important: We call updateOrderStatus FIRST to ensure status changes even if stock math fails later (though unlikely now)
               updateOrderStatus(orderId, OrderStatus.CANCELLED);
 
               setMenu(prev => {
@@ -773,10 +777,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           }
       } catch (e) {
           console.error("Cancel Order Error:", e);
-          // Just notify but don't crash app. Status is already updated if logic didn't throw in transaction.
-          // If transaction failed, status is reverted safely.
-          alert("คำเตือน: การคืนวัตถุดิบล้มเหลวบางส่วน (อาจมีรายการถูกลบไปแล้ว) แต่สถานะออเดอร์จะถูกยกเลิก");
-          // Fallback force update status locally if transaction failed in cloud but user wants UI update
+          alert("เกิดข้อผิดพลาดในการคืนสต็อก (อาจมีรายการถูกลบไปแล้ว) ระบบจะบังคับยกเลิกออเดอร์");
+          // Fallback: Force cancel status even if stock logic failed
           if(!isCloudMode) updateOrderStatus(orderId, OrderStatus.CANCELLED);
       }
   };
