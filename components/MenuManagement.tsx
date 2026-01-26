@@ -1,303 +1,323 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2 } from 'lucide-react';
-import { MenuItem } from '../types';
+import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin, Trash2, ChevronLeft } from 'lucide-react';
+import { Order, Role, SessionRecord } from '../types';
 
-export const MenuManagement: React.FC = () => {
-  const { menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, inventory } = useStore();
-  const [showForm, setShowForm] = useState(false);
-  const [newItem, setNewItem] = useState<Partial<MenuItem>>({
-    name: '',
-    description: '',
-    price: 0,
-    cost: 0,
-    category: 'Main Dish',
-    ingredients: [],
-    isAvailable: true
-  });
+export const HistoryView: React.FC = () => {
+  const { sessionHistory, orders, tables, deleteOrder, currentUser } = useStore();
+  const [selectedSession, setSelectedSession] = useState<SessionRecord | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newItem.name && newItem.price) {
-      addMenuItem({
-        id: `m-${Date.now()}`,
-        name: newItem.name,
-        description: newItem.description || '',
-        price: Number(newItem.price),
-        cost: 0, 
-        category: newItem.category || 'Main Dish',
-        ingredients: newItem.ingredients || [],
-        isAvailable: true,
-        dailyStock: -1
-      });
-      setShowForm(false);
-      setNewItem({ name: '', description: '', price: 0, cost: 0, category: 'Main Dish', isAvailable: true, ingredients: [] });
-    }
+  // Helper to get orders for a specific session
+  const getOrdersForSession = (session: SessionRecord) => {
+      // Find orders that occurred after opening
+      // If closed, must be before closing. If still open, just after opening.
+      return orders.filter(o => {
+          const t = new Date(o.timestamp).getTime();
+          const open = new Date(session.openedAt).getTime();
+          const close = session.closedAt ? new Date(session.closedAt).getTime() : Date.now();
+          
+          return t >= open && t <= close && (o.status === 'COMPLETED' || o.status === 'CANCELLED');
+      }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   };
 
-  const handleDelete = (item: MenuItem) => {
-      if(confirm(`คุณแน่ใจหรือไม่ที่จะลบเมนู "${item.name}"? การกระทำนี้ไม่สามารถย้อนกลับได้`)) {
-          deleteMenuItem(item.id);
-      }
+  const getTableNumber = (tableId: string) => tables.find(t => t.id === tableId)?.number || '??';
+
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleString('th-TH', { 
+        year: '2-digit', month: '2-digit', day: '2-digit', 
+        hour: '2-digit', minute: '2-digit' 
+    });
   };
 
-  const handleIngredientToggle = (ingredientName: string) => {
-    const current = newItem.ingredients || [];
-    if (current.includes(ingredientName)) {
-      setNewItem({ ...newItem, ingredients: current.filter(i => i !== ingredientName) });
-    } else {
-      setNewItem({ ...newItem, ingredients: [...current, ingredientName] });
-    }
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  const handleDelete = (orderId: string) => {
+     if (confirm("คำเตือน: คุณต้องการลบประวัติออเดอร์นี้ใช่หรือไม่? \n(การลบจะไม่คืนค่าวัตถุดิบและยอดเงิน)")) {
+         deleteOrder(orderId);
+     }
   };
 
-  const categories = ['Main Dish', 'Appetizer', 'Soup', 'Drink', 'Set', 'Other'];
+  const canDelete = currentUser?.role === Role.OWNER;
 
-  const getCategoryColor = (cat: string) => {
-    switch (cat) {
-      case 'เนื้อสัตว์': return 'text-red-600 bg-red-50 border-red-100';
-      case 'ผัก': return 'text-green-600 bg-green-50 border-green-100';
-      case 'ไวน์': return 'text-purple-600 bg-purple-50 border-purple-100';
-      default: return 'text-amber-600 bg-amber-50 border-amber-100';
-    }
+  // VIEW 1: Session History List
+  const renderSessionList = () => (
+    <div className="flex-1 bg-white rounded-xl shadow overflow-hidden flex flex-col border border-stone-200">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-stone-50 border-b border-stone-200 text-sm">
+              <tr>
+                <th className="p-4 font-bold text-stone-600">วันที่ (Date)</th>
+                <th className="p-4 font-bold text-stone-600">เวลาเปิด - ปิด</th>
+                <th className="p-4 font-bold text-stone-600">ผู้เปิดร้าน</th>
+                <th className="p-4 font-bold text-stone-600">ผู้ปิดร้าน</th>
+                <th className="p-4 font-bold text-stone-600 text-center">จำนวนออเดอร์</th>
+                <th className="p-4 font-bold text-stone-600 text-right">ยอดขายรวม</th>
+                <th className="p-4 font-bold text-stone-600 text-center">สถานะ</th>
+                <th className="p-4 font-bold text-stone-600 text-center">ดูข้อมูล</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100 text-sm">
+              {sessionHistory.length === 0 ? (
+                <tr><td colSpan={8} className="p-8 text-center text-stone-400">ยังไม่มีประวัติการเปิดร้าน</td></tr>
+              ) : sessionHistory.map(session => (
+                <tr key={session.id} className="hover:bg-stone-50 transition-colors">
+                  <td className="p-4 text-stone-800 font-bold">
+                      {new Date(session.openedAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                  </td>
+                  <td className="p-4 text-stone-600 font-mono">
+                      {formatTime(session.openedAt)} - {session.closedAt ? formatTime(session.closedAt) : '...'}
+                  </td>
+                  <td className="p-4">
+                      <span className="bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100 text-xs font-bold">{session.openedBy}</span>
+                  </td>
+                  <td className="p-4">
+                      {session.closedBy ? (
+                          <span className="bg-red-50 text-red-700 px-2 py-1 rounded border border-red-100 text-xs font-bold">{session.closedBy}</span>
+                      ) : '-'}
+                  </td>
+                  <td className="p-4 text-center font-bold text-stone-700">
+                      {session.closedAt ? session.orderCount : getOrdersForSession(session).length}
+                  </td>
+                  <td className="p-4 text-right font-bold text-stone-800 text-base">
+                      LS${(session.closedAt ? session.totalSales : getOrdersForSession(session).reduce((sum, o) => sum + o.totalAmount, 0)).toLocaleString()}
+                  </td>
+                  <td className="p-4 text-center">
+                     {session.closedAt ? (
+                         <span className="bg-stone-100 text-stone-500 px-2 py-1 rounded text-xs font-bold">Closed</span>
+                     ) : (
+                         <span className="bg-green-100 text-green-600 px-2 py-1 rounded text-xs font-bold animate-pulse">Open</span>
+                     )}
+                  </td>
+                  <td className="p-4 text-center">
+                      <button 
+                        onClick={() => setSelectedSession(session)}
+                        className="p-2 hover:bg-stone-200 text-stone-500 rounded-lg transition-colors"
+                      >
+                         <Eye size={18} />
+                      </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+    </div>
+  );
+
+  // VIEW 2: Orders in Session
+  const renderSessionDetails = () => {
+    if (!selectedSession) return null;
+    const ordersInSession = getOrdersForSession(selectedSession);
+    const totalInView = ordersInSession.reduce((sum, o) => sum + o.totalAmount, 0);
+
+    return (
+      <div className="flex flex-col h-full animate-in slide-in-from-right duration-300">
+         <div className="flex items-center gap-4 mb-4">
+             <button 
+               onClick={() => setSelectedSession(null)}
+               className="p-2 bg-white border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50 hover:text-stone-800 shadow-sm"
+             >
+                 <ChevronLeft />
+             </button>
+             <div>
+                <h3 className="text-xl font-bold text-stone-800 flex items-center gap-2">
+                    <History size={20} className="text-stone-400"/>
+                    รอบวันที่ {new Date(selectedSession.openedAt).toLocaleDateString('th-TH')}
+                </h3>
+                <p className="text-sm text-stone-500">
+                    เวลา: {formatTime(selectedSession.openedAt)} - {selectedSession.closedAt ? formatTime(selectedSession.closedAt) : 'ปัจจุบัน'} 
+                    | รวม {ordersInSession.length} ออเดอร์
+                </p>
+             </div>
+             <div className="ml-auto bg-stone-800 text-white px-4 py-2 rounded-lg shadow-lg">
+                 <span className="text-xs text-stone-400 block uppercase font-bold">ยอดขายรอบนี้</span>
+                 <span className="text-xl font-bold">LS${totalInView.toLocaleString()}</span>
+             </div>
+         </div>
+
+         <div className="flex-1 bg-white rounded-xl shadow overflow-hidden flex flex-col border border-stone-200">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-stone-50 border-b border-stone-200 text-sm">
+                  <tr>
+                    <th className="p-4 font-bold text-stone-600">Order ID</th>
+                    <th className="p-4 font-bold text-stone-600">เวลา (Time)</th>
+                    <th className="p-4 font-bold text-stone-600">โต๊ะ</th>
+                    <th className="p-4 font-bold text-stone-600">ลูกค้า</th>
+                    <th className="p-4 font-bold text-stone-600">รายการ</th>
+                    <th className="p-4 font-bold text-stone-600 text-center">การชำระ</th>
+                    <th className="p-4 font-bold text-stone-600 text-right">ยอดรวม</th>
+                    <th className="p-4 font-bold text-stone-600 text-center">สถานะ</th>
+                    <th className="p-4 font-bold text-stone-600 text-center">จัดการ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 text-sm">
+                  {ordersInSession.length === 0 ? (
+                    <tr><td colSpan={9} className="p-8 text-center text-stone-400">ไม่มีรายการออเดอร์ในรอบนี้</td></tr>
+                  ) : ordersInSession.map(o => (
+                    <tr key={o.id} className="hover:bg-stone-50 transition-colors">
+                      <td className="p-4 font-mono text-stone-400 text-xs">{o.id.slice(-6).toUpperCase()}</td>
+                      <td className="p-4 text-stone-600">{formatTime(o.timestamp)}</td>
+                      <td className="p-4">
+                        <span className="font-bold text-stone-800 bg-stone-100 px-2 py-1 rounded">{getTableNumber(o.tableId)}</span>
+                      </td>
+                      <td className="p-4">
+                        <div className="font-bold text-stone-800">{o.customerName}</div>
+                        <div className="text-[10px] text-red-500 uppercase">{o.customerClass}</div>
+                      </td>
+                      <td className="p-4 text-stone-500 max-w-xs truncate">
+                        {o.items.length} รายการ
+                      </td>
+                      <td className="p-4 text-center">
+                        {o.paymentMethod === 'CARD' ? (
+                          <span className="inline-flex items-center gap-1 text-indigo-600 bg-indigo-50 px-2 py-1 rounded text-xs font-bold border border-indigo-100">
+                              <CreditCard size={12} /> Card
+                          </span>
+                        ) : o.paymentMethod === 'CASH' ? (
+                          <span className="inline-flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded text-xs font-bold border border-green-100">
+                              <Banknote size={12} /> Cash
+                          </span>
+                        ) : <span className="text-stone-300">-</span>}
+                      </td>
+                      <td className="p-4 text-right font-bold text-stone-800 text-base">LS${o.totalAmount.toLocaleString()}</td>
+                      <td className="p-4 text-center">
+                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${o.status === 'COMPLETED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {o.status}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex justify-center gap-2">
+                            <button 
+                              onClick={() => setSelectedOrder(o)}
+                              className="p-2 hover:bg-stone-100 text-stone-400 hover:text-stone-600 rounded-lg transition-colors"
+                            >
+                                <Eye size={18} />
+                            </button>
+                            {canDelete && (
+                                <button 
+                                    onClick={() => handleDelete(o.id)}
+                                    className="p-2 hover:bg-red-50 text-stone-300 hover:text-red-600 rounded-lg transition-colors"
+                                >
+                                    <Trash2 size={18} />
+                                </button>
+                            )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+         </div>
+      </div>
+    );
   };
 
   return (
-    <div className="h-full">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-3xl font-bold text-stone-800 flex items-center gap-2">
-            <Coffee className="text-red-600" /> จัดการเมนูอาหาร
-          </h2>
-          <p className="text-stone-500 text-sm mt-1">เพิ่มลบแก้ไขรายการอาหารและราคา</p>
-        </div>
-        <button 
-          onClick={() => setShowForm(true)}
-          className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-red-600/20 transition-all active:scale-95"
-        >
-          <Plus size={20} /> เพิ่มเมนูใหม่
-        </button>
-      </div>
+    <div className="h-full flex flex-col">
+      <h2 className="text-3xl font-bold text-stone-800 mb-6 flex items-center gap-2">
+        <History className="text-red-600" /> ประวัติการเปิด-ปิดร้าน (Store History)
+      </h2>
 
-      {showForm && (
+      {!selectedSession ? renderSessionList() : renderSessionDetails()}
+
+      {/* Receipt Details Modal */}
+      {selectedOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="bg-red-900 p-5 text-white flex justify-between items-center shrink-0">
-              <div>
-                <h3 className="font-bold text-xl flex items-center gap-2">
-                  <Plus size={24} className="text-amber-400" /> เพิ่มรายการอาหารใหม่
-                </h3>
-                <p className="text-red-200 text-sm mt-0.5">กรอกข้อมูลเมนูเพื่อนำขึ้นขายหน้าร้าน</p>
+           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="bg-red-900 p-4 text-white flex justify-between items-center shrink-0">
+                 <div className="flex items-center gap-2">
+                    <Receipt size={20} />
+                    <span className="font-bold text-lg">รายละเอียดใบเสร็จ</span>
+                 </div>
+                 <button onClick={() => setSelectedOrder(null)} className="hover:bg-white/10 p-1 rounded-full transition-colors"><X size={20} /></button>
               </div>
-              <button onClick={() => setShowForm(false)} className="hover:bg-white/10 p-2 rounded-full transition-colors"><X size={20} /></button>
-            </div>
 
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto bg-white flex-1">
-              <form onSubmit={handleSubmit} className="space-y-5">
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {/* Name */}
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="block text-sm font-bold text-stone-700 mb-2 flex items-center gap-1">
-                      <Coffee size={14} className="text-red-500" /> ชื่อเมนู (Name) <span className="text-red-500">*</span>
-                    </label>
-                    <input 
-                      placeholder="เช่น ข้าวมันไก่..." 
-                      className="w-full border border-stone-300 bg-stone-50 rounded-lg px-4 py-2.5 text-stone-900 focus:ring-2 focus:ring-red-500 focus:bg-white focus:border-red-500 outline-none transition-all placeholder:text-stone-400"
-                      value={newItem.name}
-                      onChange={e => setNewItem({...newItem, name: e.target.value})}
-                      required
-                    />
-                  </div>
-
-                  {/* Category */}
-                  <div className="col-span-2 md:col-span-1">
-                     <label className="block text-sm font-bold text-stone-700 mb-2 flex items-center gap-1">
-                        <Tag size={14} className="text-red-500" /> หมวดหมู่ (Category)
-                     </label>
-                     <div className="relative">
-                       <select 
-                        className="w-full border border-stone-300 bg-stone-50 rounded-lg px-4 py-2.5 text-stone-900 focus:ring-2 focus:ring-red-500 focus:bg-white focus:border-red-500 outline-none appearance-none transition-all"
-                        value={newItem.category}
-                        onChange={e => setNewItem({...newItem, category: e.target.value})}
-                      >
-                         {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-stone-500">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-                      </div>
+              {/* Receipt Content */}
+              <div className="p-6 overflow-y-auto bg-stone-50 flex-1">
+                 <div className="bg-white p-6 shadow-sm border border-stone-200 rounded-xl relative overflow-hidden">
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.03] pointer-events-none">
+                       <History size={200} />
                     </div>
-                  </div>
 
-                  {/* Price */}
-                  <div className="col-span-2 md:col-span-1">
-                    <label className="block text-sm font-bold text-stone-700 mb-2 flex items-center gap-1">
-                       <DollarSign size={14} className="text-red-500" /> ราคาขาย (Price) <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-500 font-bold">฿</span>
-                      <input 
-                        type="number"
-                        min="0"
-                        className="w-full border border-stone-300 bg-stone-50 rounded-lg pl-10 pr-4 py-2.5 text-stone-900 font-bold focus:ring-2 focus:ring-red-500 focus:bg-white focus:border-red-500 outline-none transition-all"
-                        value={newItem.price || ''}
-                        onChange={e => setNewItem({...newItem, price: Number(e.target.value)})}
-                        required
-                        placeholder="0.00"
-                      />
+                    <div className="text-center mb-6 border-b border-stone-100 pb-4">
+                       <h3 className="text-xl font-bold text-stone-800 font-heading">Triad Restaurant</h3>
+                       <p className="text-[10px] text-stone-400 tracking-widest uppercase mb-2">By Li Group</p>
+                       <div className="inline-block px-3 py-1 bg-stone-100 rounded-lg text-xs font-mono text-stone-500">
+                          ID: {selectedOrder.id}
+                       </div>
                     </div>
-                  </div>
 
-                  {/* Description */}
-                  <div className="col-span-2">
-                    <label className="block text-sm font-bold text-stone-700 mb-2 flex items-center gap-1">
-                       <FileText size={14} className="text-red-500" /> คำอธิบาย (Description)
-                    </label>
-                    <textarea 
-                      placeholder="รายละเอียดเมนู ส่วนประกอบเพิ่มเติม..." 
-                      className="w-full border border-stone-300 bg-stone-50 rounded-lg px-4 py-2.5 text-stone-900 focus:ring-2 focus:ring-red-500 focus:bg-white focus:border-red-500 outline-none transition-all placeholder:text-stone-400 min-h-[80px]"
-                      value={newItem.description}
-                      onChange={e => setNewItem({...newItem, description: e.target.value})}
-                    />
-                  </div>
+                    <div className="grid grid-cols-2 gap-y-2 text-sm mb-6">
+                       <div className="text-stone-500 flex items-center gap-1"><Calendar size={12}/> วันที่</div>
+                       <div className="text-right font-bold text-stone-700">{formatDateTime(selectedOrder.timestamp)}</div>
+                       
+                       <div className="text-stone-500 flex items-center gap-1"><MapPin size={12}/> โต๊ะ</div>
+                       <div className="text-right font-bold text-stone-700">{getTableNumber(selectedOrder.tableId)}</div>
 
-                  {/* Ingredient Selection */}
-                  <div className="col-span-2">
-                    <label className="block text-sm font-bold text-stone-700 mb-2 flex items-center gap-1">
-                       <CheckSquare size={14} className="text-red-500" /> เลือกวัตถุดิบที่ใช้ (Ingredients)
-                    </label>
-                    <div className="p-4 border border-stone-200 rounded-xl bg-stone-50/50 max-h-48 overflow-y-auto">
-                       {inventory.length === 0 ? (
-                         <div className="text-center text-stone-400 text-sm py-4">ไม่มีข้อมูลวัตถุดิบในคลัง</div>
-                       ) : (
-                         <div className="grid grid-cols-2 gap-3">
-                           {inventory.map(ing => {
-                             const isSelected = newItem.ingredients?.includes(ing.name);
-                             return (
-                               <label 
-                                 key={ing.id} 
-                                 className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-all ${isSelected ? 'bg-red-50 border-red-200 shadow-sm' : 'bg-white border-transparent hover:bg-stone-100'}`}
-                               >
-                                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-stone-300'}`}>
-                                      {isSelected && <CheckSquare size={12} />}
-                                  </div>
-                                  <input 
-                                    type="checkbox"
-                                    className="hidden"
-                                    checked={isSelected}
-                                    onChange={() => handleIngredientToggle(ing.name)}
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                      <div className={`text-sm ${isSelected ? 'font-bold text-red-700' : 'text-stone-600'}`}>{ing.name}</div>
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded border inline-block mt-0.5 ${getCategoryColor(ing.category)}`}>
-                                         {ing.category}
-                                      </span>
-                                  </div>
-                               </label>
-                             );
-                           })}
-                         </div>
-                       )}
+                       <div className="text-stone-500 flex items-center gap-1"><User size={12}/> ลูกค้า</div>
+                       <div className="text-right font-bold text-stone-700">{selectedOrder.customerName} <span className="text-[10px] bg-red-50 text-red-600 px-1 rounded">{selectedOrder.customerClass}</span></div>
                     </div>
-                    <div className="text-xs text-stone-500 mt-2 flex items-center gap-1">
-                       <div className="w-1 h-1 bg-stone-400 rounded-full"></div>
-                       <span>ใช้สำหรับการตัดสต็อกวัตถุดิบเมื่อมีการสั่งเมนูนี้</span>
+
+                    <div className="border-t border-b border-stone-200 py-4 mb-4">
+                       <table className="w-full text-sm">
+                          <thead>
+                             <tr className="text-stone-400 text-xs text-left">
+                                <th className="pb-2 font-normal">รายการ</th>
+                                <th className="pb-2 font-normal text-center">จน.</th>
+                                <th className="pb-2 font-normal text-right">รวม</th>
+                             </tr>
+                          </thead>
+                          <tbody className="space-y-2">
+                             {selectedOrder.items.map((item, idx) => (
+                               <tr key={idx}>
+                                  <td className="py-1">
+                                    <div className="font-bold text-stone-700">{item.name}</div>
+                                    <div className="text-xs text-stone-400">@{item.price}</div>
+                                  </td>
+                                  <td className="py-1 text-center font-mono text-stone-600">x{item.quantity}</td>
+                                  <td className="py-1 text-right font-mono text-stone-800">{item.price * item.quantity}</td>
+                               </tr>
+                             ))}
+                          </tbody>
+                       </table>
                     </div>
-                  </div>
-                </div>
 
-              </form>
-            </div>
+                    <div className="space-y-3">
+                       <div className="flex justify-between items-center">
+                          <span className="text-stone-500 text-sm">ช่องทางชำระเงิน</span>
+                          <span className="font-bold text-stone-800 flex items-center gap-1">
+                             {selectedOrder.paymentMethod === 'CASH' ? <Banknote size={14} className="text-green-600"/> : <CreditCard size={14} className="text-indigo-600"/>}
+                             {selectedOrder.paymentMethod || '-'}
+                          </span>
+                       </div>
+                       
+                       <div className="flex justify-between items-center text-xl font-bold bg-stone-50 p-3 rounded-lg border border-stone-100">
+                          <span className="text-stone-800">ยอดสุทธิ</span>
+                          <span className="text-red-600">LS${selectedOrder.totalAmount.toLocaleString()}</span>
+                       </div>
+                    </div>
+                 </div>
 
-            {/* Modal Footer */}
-            <div className="p-5 border-t border-stone-200 bg-stone-50 flex justify-end gap-3 shrink-0">
-              <button 
-                type="button" 
-                onClick={() => setShowForm(false)} 
-                className="px-6 py-3 text-stone-600 bg-white border border-stone-300 rounded-xl font-bold hover:bg-stone-50 transition-colors"
-              >
-                ยกเลิก
-              </button>
-              <button 
-                onClick={handleSubmit} 
-                className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-600/20 transition-all active:scale-95 flex items-center gap-2"
-              >
-                <Plus size={18} /> บันทึกเมนู
-              </button>
-            </div>
-          </div>
+                 <div className="mt-4 text-xs text-center text-stone-400 space-y-1">
+                    {selectedOrder.chefName && <div>Chef: {selectedOrder.chefName}</div>}
+                    {selectedOrder.serverName && <div>Server: {selectedOrder.serverName}</div>}
+                    <div>Status: {selectedOrder.status}</div>
+                 </div>
+              </div>
+              
+              <div className="p-4 bg-white border-t border-stone-200">
+                 <button onClick={() => setSelectedOrder(null)} className="w-full py-3 bg-stone-800 hover:bg-black text-white rounded-xl font-bold transition-colors">
+                    ปิดหน้าต่าง
+                 </button>
+              </div>
+           </div>
         </div>
       )}
-
-      <div className="space-y-8 pb-10">
-        {categories.map(cat => {
-            const items = menu.filter(m => m.category === cat);
-            if(items.length === 0) return null;
-            return (
-                <div key={cat}>
-                    <h3 className="text-xl font-bold text-stone-800 mb-4 flex items-center gap-2 border-b border-stone-200 pb-2">
-                        <span className="w-2 h-6 bg-red-600 rounded-full"></span>
-                        {cat}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {items.map(item => (
-                        <div key={item.id} className={`bg-white p-5 rounded-2xl shadow-sm border transition-all hover:shadow-md group relative ${item.isAvailable ? 'border-stone-200' : 'border-stone-200 bg-stone-50 opacity-80'}`}>
-                            
-                            {/* Delete Button (Visible on Hover) */}
-                            <button 
-                                onClick={() => handleDelete(item)}
-                                className="absolute -top-2 -right-2 bg-white text-stone-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full shadow-sm border border-stone-200 opacity-0 group-hover:opacity-100 transition-all z-10"
-                                title="ลบเมนู"
-                            >
-                                <Trash2 size={16} />
-                            </button>
-
-                            <div className="flex justify-between items-start mb-3">
-                                <h3 className={`font-bold text-lg line-clamp-1 ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`}>{item.name}</h3>
-                                <button 
-                                  onClick={() => toggleMenuAvailability(item.id)}
-                                  className={`transition-colors ${item.isAvailable ? 'text-green-500 hover:text-green-600' : 'text-stone-300 hover:text-stone-400'}`}
-                                  title={item.isAvailable ? "Available (Click to disable)" : "Unavailable (Click to enable)"}
-                                >
-                                    {item.isAvailable ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
-                                </button>
-                            </div>
-                            
-                            <p className="text-stone-500 text-sm mb-4 min-h-[40px] line-clamp-2 leading-relaxed">
-                               {item.description || "-"}
-                            </p>
-                            
-                            {/* Show Ingredients */}
-                            {item.ingredients && item.ingredients.length > 0 && (
-                              <div className="mb-4 flex flex-wrap gap-1.5 min-h-[30px] content-start">
-                                {item.ingredients.slice(0, 4).map((ing, idx) => (
-                                  <span key={idx} className="text-[10px] bg-stone-100 text-stone-600 px-2 py-0.5 rounded-md border border-stone-200 font-medium">
-                                    {ing}
-                                  </span>
-                                ))}
-                                {item.ingredients.length > 4 && (
-                                   <span className="text-[10px] text-stone-400 px-1">+{item.ingredients.length - 4}</span>
-                                )}
-                              </div>
-                            )}
-
-                            <div className="flex justify-between items-end pt-4 border-t border-stone-100 mt-auto">
-                                <div className={`text-xs font-bold px-2 py-1 rounded ${item.isAvailable ? 'bg-green-100 text-green-700' : 'bg-stone-200 text-stone-500'}`}>
-                                    {item.isAvailable ? 'พร้อมขาย' : 'ไม่พร้อมขาย'}
-                                </div>
-                                <div className="text-right">
-                                    <span className="text-[10px] text-stone-400 block uppercase tracking-wider font-bold">Price</span>
-                                    <span className={`font-bold text-2xl ${item.isAvailable ? 'text-red-600' : 'text-stone-400'}`}>฿{item.price}</span>
-                                </div>
-                            </div>
-                        </div>
-                        ))}
-                    </div>
-                </div>
-            )
-        })}
-      </div>
     </div>
   );
 };

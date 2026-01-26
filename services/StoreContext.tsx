@@ -112,8 +112,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const saved = localStorage.getItem(KEYS.TABLES);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        let parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+            // FIX: Ensure Delivery tables exist for old data
+            const hasDelivery = parsed.some((t: any) => t.floor === 'DELIVERY');
+            if (!hasDelivery) {
+                const freshTables = generateTables();
+                const deliveryTables = freshTables.filter(t => t.floor === 'DELIVERY');
+                parsed = [...parsed, ...deliveryTables];
+            }
+            return parsed;
+        }
       }
     } catch(e) {}
     return generateTables();
@@ -636,7 +645,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // RESTOCK LOGIC IMPLEMENTATION
+  // RESTOCK LOGIC IMPLEMENTATION (Fixed for Safety)
   const cancelOrder = async (orderId: string) => {
       const order = orders.find(o => o.id === orderId);
       if (!order) return;
@@ -693,7 +702,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                  // Restore Menu Stock
                  for (const [id, qty] of menuStockToRestore.entries()) {
                      const mItem = menuMap.get(id);
-                     transaction.update(mItem.ref, { dailyStock: mItem.dailyStock + qty });
+                     if(mItem) { // Safety check
+                        transaction.update(mItem.ref, { dailyStock: mItem.dailyStock + qty });
+                     }
                  }
 
                  // Restore Ingredients
@@ -709,7 +720,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               console.log("Order Cancelled and Stock Restored (Cloud)");
 
           } else {
-              // LOCAL RESTOCK
+              // LOCAL RESTOCK (Safe Version)
               const ingredientsToRestore = new Map<string, number>(); // Name -> Qty
               const menuStockToRestore = new Map<string, number>(); // ID -> Qty
 
@@ -722,8 +733,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                       }
                       if (mItem.ingredients) {
                           mItem.ingredients.forEach(ingName => {
-                              const current = ingredientsToRestore.get(ingName) || 0;
-                              ingredientsToRestore.set(ingName, current + item.quantity);
+                              // Ensure ingredient exists in current inventory to avoid error
+                              const exists = inventory.some(i => i.name === ingName);
+                              if (exists) {
+                                  const current = ingredientsToRestore.get(ingName) || 0;
+                                  ingredientsToRestore.set(ingName, current + item.quantity);
+                              }
                           });
                       }
                   }
@@ -735,7 +750,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               setMenu(prev => {
                   const next = prev.map(m => {
                       const restoreQty = menuStockToRestore.get(m.id);
-                      if (restoreQty) {
+                      if (restoreQty !== undefined) {
                           return { ...m, dailyStock: m.dailyStock + restoreQty };
                       }
                       return m;
@@ -747,7 +762,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               setInventory(prev => {
                   const next = prev.map(ing => {
                       const restoreQty = ingredientsToRestore.get(ing.name);
-                      if (restoreQty) {
+                      if (restoreQty !== undefined) {
                           return { ...ing, quantity: ing.quantity + restoreQty };
                       }
                       return ing;
@@ -758,7 +773,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           }
       } catch (e) {
           console.error("Cancel Order Error:", e);
-          alert("เกิดข้อผิดพลาดในการยกเลิกและคืนสต็อก: " + e);
+          // Just notify but don't crash app. Status is already updated if logic didn't throw in transaction.
+          // If transaction failed, status is reverted safely.
+          alert("คำเตือน: การคืนวัตถุดิบล้มเหลวบางส่วน (อาจมีรายการถูกลบไปแล้ว) แต่สถานะออเดอร์จะถูกยกเลิก");
+          // Fallback force update status locally if transaction failed in cloud but user wants UI update
+          if(!isCloudMode) updateOrderStatus(orderId, OrderStatus.CANCELLED);
       }
   };
 

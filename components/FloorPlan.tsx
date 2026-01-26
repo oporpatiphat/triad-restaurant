@@ -283,7 +283,7 @@ export const FloorPlan: React.FC = () => {
                         >
                           <div className="flex justify-between w-full mb-1 items-start relative z-10">
                             <span className="font-bold text-lg text-stone-800 group-hover:text-red-700 transition-colors">{item.name}</span>
-                            <span className="text-red-600 font-bold bg-red-50 px-2 py-1 rounded-lg">฿{item.price}</span>
+                            <span className="text-red-600 font-bold bg-red-50 px-2 py-1 rounded-lg">LS${item.price}</span>
                           </div>
                           <p className="text-sm text-stone-500 line-clamp-2 mt-auto relative z-10">{item.description}</p>
                           <div className="mt-3 text-xs font-bold flex items-center justify-between relative z-10">
@@ -414,7 +414,7 @@ export const FloorPlan: React.FC = () => {
                             </div>
                             <div>
                                 <div className="font-bold text-stone-800 text-sm">{item.name}</div>
-                                <div className="text-xs text-stone-500">฿{item.price * item.quantity}</div>
+                                <div className="text-xs text-stone-500">LS${item.price * item.quantity}</div>
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
@@ -434,7 +434,7 @@ export const FloorPlan: React.FC = () => {
                               <Package size={16} className="text-orange-600"/>
                               <span className="font-bold text-stone-800 text-sm">ค่ากล่อง x {currentActiveOrder?.boxCount}</span>
                             </div>
-                            <div className="text-sm font-bold text-stone-600">฿{(currentActiveOrder?.boxCount || 0) * 100}</div>
+                            <div className="text-sm font-bold text-stone-600">LS${(currentActiveOrder?.boxCount || 0) * 100}</div>
                         </div>
                       )}
                       {/* Bag Info */}
@@ -454,7 +454,7 @@ export const FloorPlan: React.FC = () => {
                                 <span className="font-bold text-stone-900 text-sm">x{item.quantity}</span>
                                 <span className="text-stone-700 text-sm">{item.name}</span>
                             </div>
-                            <div className="text-sm font-bold text-stone-600">฿{item.price * item.quantity}</div>
+                            <div className="text-sm font-bold text-stone-600">LS${item.price * item.quantity}</div>
                           </div>
                       ))}
                     </div>
@@ -473,7 +473,7 @@ export const FloorPlan: React.FC = () => {
                       <div className="flex justify-between items-center">
                           <div className="flex items-center gap-2">
                              <Package size={18} className="text-orange-500"/>
-                             <span className="text-sm font-bold text-stone-700">กล่อง (100฿)</span>
+                             <span className="text-sm font-bold text-stone-700">กล่อง (100 LS$)</span>
                           </div>
                           <div className="flex items-center bg-white rounded border border-stone-200">
                              <button onClick={() => setBoxCount(Math.max(0, boxCount-1))} className="px-2 py-1 hover:bg-stone-100 text-stone-500"><Minus size={14}/></button>
@@ -506,7 +506,7 @@ export const FloorPlan: React.FC = () => {
                 </div>
                 <div className="flex justify-between text-2xl font-bold text-stone-800 mb-6 font-heading">
                   <span>รวมทั้งสิ้น</span>
-                  <span className="text-red-600">฿
+                  <span className="text-red-600">LS$ 
                      {(selectedTable.status === TableStatus.AVAILABLE 
                         ? orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + (boxCount * 100)
                         : currentActiveOrder?.totalAmount || 0).toLocaleString()}
