@@ -121,7 +121,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return generateTables();
   });
 
-  // FIX: Force check for Delivery tables on load
+  // FIX: Force inject Delivery tables if missing (Local Mode)
   useEffect(() => {
     if (!isCloudMode && tables.length > 0) {
         const hasDelivery = tables.some(t => t.floor === 'DELIVERY');
@@ -379,7 +379,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // FIX: Robust CloseStore to prevent crash if history is missing
+  // FIX: Robust CloseStore to prevent crash if history is missing or corrupted
   const closeStore = async (closerName: string) => {
     const currentOrders = orders.filter(o => o.timestamp >= storeSession.openedAt);
     const totalSales = currentOrders
@@ -409,7 +409,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setStoreSession(newSession);
         
         setSessionHistory(prev => {
-            // Safety check: ensure prev exists and has at least one item before accessing [0]
+            // Safety Check: Ensure there is a history record to update
             if (prev.length > 0 && prev[0] && !prev[0].closedAt) {
                 const updatedLatest = {
                     ...prev[0],
@@ -422,6 +422,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 saveToStorage(KEYS.SESSIONS_HISTORY, next);
                 return next;
             }
+            // If no previous history found but we are closing, just return prev to prevent crash
             return prev;
         });
 
@@ -655,23 +656,25 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // FIX: RESTOCK LOGIC - Added safety checks for deleted items
+  // FIX: Safe CancelOrder - Forces cancellation even if restock logic fails
   const cancelOrder = async (orderId: string) => {
       const order = orders.find(o => o.id === orderId);
       if (!order) return;
 
+      // 1. Force update status FIRST to ensure UI reflects cancellation
+      updateOrderStatus(orderId, OrderStatus.CANCELLED);
+
+      // 2. Attempt Restock Logic (Try-Catch to prevent crash if items deleted)
       try {
           if (isCloudMode && db) {
-              // ... cloud transaction (kept same but safe) ...
               await runTransaction(db, async (transaction) => {
                  const orderRef = doc(db!, 'orders', orderId);
                  const tableRef = doc(db!, 'tables', order.tableId);
 
-                 // 1. Calculate items to restore
+                 // Calculate Restore
                  const ingredientsToRestore = new Map<string, number>(); 
                  const menuStockToRestore = new Map<string, number>(); 
 
-                 // Get latest state
                  const menuDocs = await getDocs(collection(db!, 'menu'));
                  const invDocs = await getDocs(collection(db!, 'inventory'));
                  
@@ -703,6 +706,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                      }
                  }
 
+                 // IMPORTANT: We already updated status via updateOrderStatus, but doing it in DB too
                  transaction.update(orderRef, { status: OrderStatus.CANCELLED });
                  transaction.update(tableRef, { status: TableStatus.AVAILABLE, currentOrderId: null });
 
@@ -723,12 +727,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               console.log("Order Cancelled and Stock Restored (Cloud)");
 
           } else {
-              // LOCAL RESTOCK (Safe Version)
+              // LOCAL RESTOCK
               const ingredientsToRestore = new Map<string, number>();
               const menuStockToRestore = new Map<string, number>();
 
               for (const item of order.items) {
                   const mItem = menu.find(m => m.id === item.menuItemId);
+                  // Safety: Only process if menu item still exists
                   if (mItem) {
                       if (mItem.dailyStock !== -1) {
                           const current = menuStockToRestore.get(mItem.id) || 0;
@@ -736,7 +741,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                       }
                       if (mItem.ingredients) {
                           mItem.ingredients.forEach(ingName => {
-                              // FIX: Safety check - if ingredient deleted, just skip it
+                              // Safety: Only process if ingredient still exists
                               const exists = inventory.some(i => i.name === ingName);
                               if (exists) {
                                   const current = ingredientsToRestore.get(ingName) || 0;
@@ -747,10 +752,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   }
               }
 
-              // Apply Updates
-              // Important: We call updateOrderStatus FIRST to ensure status changes even if stock math fails later (though unlikely now)
-              updateOrderStatus(orderId, OrderStatus.CANCELLED);
-
+              // Apply Inventory Updates
               setMenu(prev => {
                   const next = prev.map(m => {
                       const restoreQty = menuStockToRestore.get(m.id);
@@ -776,10 +778,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               });
           }
       } catch (e) {
-          console.error("Cancel Order Error:", e);
-          alert("เกิดข้อผิดพลาดในการคืนสต็อก (อาจมีรายการถูกลบไปแล้ว) ระบบจะบังคับยกเลิกออเดอร์");
-          // Fallback: Force cancel status even if stock logic failed
-          if(!isCloudMode) updateOrderStatus(orderId, OrderStatus.CANCELLED);
+          console.error("Cancel Order Partial Failure:", e);
+          // Even if stock logic fails, the order status was already updated in step 1.
+          // We alert user that stock might be inconsistent but order is gone.
+          alert("แจ้งเตือน: ยกเลิกออเดอร์แล้ว แต่การคืนสต็อกสินค้าบางรายการล้มเหลว (เนื่องจากข้อมูลถูกลบไปก่อนหน้า)");
       }
   };
 
