@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
-import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Cloud, CloudOff, ArrowUpToLine } from 'lucide-react';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Cloud, CloudOff, ArrowUpToLine, Filter, Type } from 'lucide-react';
 
 export const Layout: React.FC = () => {
   const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, inventory, isCloudMode } = useStore();
@@ -14,6 +14,10 @@ export const Layout: React.FC = () => {
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [dailyMenu, setDailyMenu] = useState<MenuItem[]>([]);
   const [menuSearch, setMenuSearch] = useState('');
+  
+  // NEW: Filter states for easier menu selection
+  const [activeCategoryTab, setActiveCategoryTab] = useState<string>('All');
+  const [showThaiOnly, setShowThaiOnly] = useState(true); // Default to true to hide "other shop" items
 
   // Determine active tab from URL
   const currentPath = location.pathname.split('/')[1] || 'floorplan';
@@ -220,6 +224,9 @@ export const Layout: React.FC = () => {
   const canManage = currentUser?.role === Role.OWNER;
   const isMenuReady = dailyMenu.some(m => m.isAvailable);
 
+  // Helper to detect Thai characters (Triad Menu) vs English (Other Shop)
+  const isThai = (text: string) => /[ก-๙]/.test(text);
+
   return (
     <div className="flex h-screen bg-[#F5F5F4] overflow-hidden">
       <aside className="w-64 bg-gradient-to-b from-red-900 to-red-950 text-white flex flex-col shadow-xl relative z-20">
@@ -330,7 +337,7 @@ export const Layout: React.FC = () => {
       {/* Daily Menu Setup Modal */}
       {showOpenModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/80 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 bg-red-900 text-white flex justify-between items-center">
               <div>
                 <h2 className="text-2xl font-bold flex items-center gap-2">
@@ -343,49 +350,97 @@ export const Layout: React.FC = () => {
               </button>
             </div>
             
-            <div className="p-4 bg-stone-50 border-b border-stone-200 flex gap-4">
-               <div className="relative flex-1">
-                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
-                 <input 
-                   type="text" 
-                   placeholder="ค้นหาเมนู..." 
-                   value={menuSearch} 
-                   onChange={e => setMenuSearch(e.target.value)}
-                   className="w-full pl-10 pr-4 py-2 border border-stone-300 rounded-lg outline-none focus:ring-2 focus:ring-red-500"
-                 />
+            {/* Toolbar & Filters */}
+            <div className="p-4 bg-stone-50 border-b border-stone-200 space-y-4">
+               <div className="flex gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
+                    <input 
+                      type="text" 
+                      placeholder="ค้นหาเมนู..." 
+                      value={menuSearch} 
+                      onChange={e => setMenuSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-stone-300 rounded-lg outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+                  {/* Thai Language Filter Toggle */}
+                  <button 
+                    onClick={() => setShowThaiOnly(!showThaiOnly)}
+                    className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 border transition-all ${showThaiOnly ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-white text-stone-500 border-stone-300 hover:bg-stone-100'}`}
+                  >
+                     <Type size={16} />
+                     {showThaiOnly ? 'เฉพาะเมนูไทย (Triad Only)' : 'แสดงทั้งหมด (Show All)'}
+                  </button>
+               </div>
+               
+               {/* Category Tabs */}
+               <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  <button
+                     onClick={() => setActiveCategoryTab('All')}
+                     className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-all border ${activeCategoryTab === 'All' ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                  >
+                     ทั้งหมด (All)
+                  </button>
+                  {categories.map(cat => (
+                     <button
+                        key={cat}
+                        onClick={() => setActiveCategoryTab(cat)}
+                        className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-all border ${activeCategoryTab === cat ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                     >
+                        {cat}
+                     </button>
+                  ))}
                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-stone-50">
+            <div className="flex-1 overflow-y-auto p-6 bg-stone-100/50">
                {categories.map(category => {
-                 const categoryItems = dailyMenu.filter(m => 
+                 // Skip category if not active
+                 if (activeCategoryTab !== 'All' && activeCategoryTab !== category) return null;
+
+                 let categoryItems = dailyMenu.filter(m => 
                    m.category === category &&
                    m.name.toLowerCase().includes(menuSearch.toLowerCase())
                  );
                  
+                 // Apply Thai Filter
+                 if (showThaiOnly) {
+                     categoryItems = categoryItems.filter(m => isThai(m.name));
+                 }
+                 
                  if (categoryItems.length === 0) return null;
 
                  return (
-                   <div key={category} className="mb-8">
-                     <h3 className="font-bold text-lg text-stone-700 mb-3 sticky top-0 bg-stone-50 py-2 z-10 border-b border-stone-200 flex items-center gap-2">
-                        <span className="w-1 h-6 bg-red-50 rounded-full"></span>
-                        {category}
+                   <div key={category} className="mb-8 animate-in slide-in-from-bottom-2 duration-300">
+                     <h3 className="font-bold text-lg text-stone-700 mb-3 flex items-center gap-2">
+                        <span className={`w-1.5 h-6 rounded-full ${category === 'Main Dish' ? 'bg-red-500' : 'bg-stone-400'}`}></span>
+                        {category} <span className="text-xs text-stone-400 font-normal">({categoryItems.length})</span>
                      </h3>
-                     <div className="grid grid-cols-2 gap-4">
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                        {categoryItems.map(item => {
                          const maxPossible = getMaxPossibleStock(item);
                          const isStockLow = maxPossible < 5;
+                         const isThaiItem = isThai(item.name);
                          
                          return (
-                         <div key={item.id} className={`bg-white p-4 rounded-xl border-2 transition-all ${item.isAvailable ? 'border-green-500/30' : 'border-stone-200 bg-stone-50'}`}>
+                         <div 
+                           key={item.id} 
+                           className={`p-4 rounded-xl border-2 transition-all shadow-sm ${
+                             item.isAvailable 
+                               ? (isThaiItem ? 'border-amber-400 bg-amber-50/10 ring-1 ring-amber-100/50' : 'border-green-500/30 bg-white') 
+                               : (isThaiItem ? 'border-stone-200 bg-white' : 'border-stone-100 bg-stone-50 opacity-60 grayscale-[0.5] hover:opacity-100 hover:grayscale-0')
+                           }`}
+                         >
                             <div className="flex justify-between items-start mb-3">
-                               <div>
-                                  <div className={`font-bold ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`}>{item.name}</div>
-                                  <div className="text-xs text-stone-500">{item.category}</div>
+                               <div className="flex-1 min-w-0 pr-2">
+                                  <div className={`font-bold line-clamp-2 ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`} style={{minHeight: '40px'}}>{item.name}</div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-[10px] text-stone-400 uppercase tracking-wide">{item.category}</span>
+                                    {!isThaiItem && <span className="text-[10px] bg-stone-200 text-stone-500 px-1 rounded">Other</span>}
+                                  </div>
                                </div>
                                <button 
                                  onClick={() => {
-                                     // Toggle logic
                                      const willBeAvailable = !item.isAvailable;
                                      if(willBeAvailable && maxPossible === 0) {
                                          alert("วัตถุดิบหมด! ไม่สามารถเปิดขายได้");
@@ -393,30 +448,30 @@ export const Layout: React.FC = () => {
                                      }
                                      updateDailyItem(item.id, { isAvailable: willBeAvailable });
                                  }}
-                                 className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${item.isAvailable ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+                                 className={`px-3 py-1 rounded-full text-xs font-bold transition-colors shrink-0 ${item.isAvailable ? 'bg-green-100 text-green-700' : 'bg-stone-200 text-stone-500'}`}
                                >
                                  {item.isAvailable ? 'พร้อมขาย' : 'ปิด'}
                                </button>
                             </div>
                             
-                            <div className="bg-stone-50 p-3 rounded-lg border border-stone-100">
+                            <div className={`p-3 rounded-lg border ${item.isAvailable ? 'bg-white border-stone-200' : 'bg-transparent border-transparent'}`}>
                               <div className="flex items-center justify-between mb-2">
                                  <span className="text-xs font-medium text-stone-500 flex items-center gap-1">
-                                    จำนวนขายวันนี้ 
-                                    {isStockLow && <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1 rounded">(วัตถุดิบต่ำ)</span>}
+                                    จำนวนขาย
+                                    {isStockLow && <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1 rounded">Low</span>}
                                  </span>
                                  <span className="text-xs text-stone-400 whitespace-nowrap font-bold">
-                                   Smart Limit: {maxPossible}
+                                   Max: {maxPossible}
                                  </span>
                               </div>
                               
                               <div className="flex items-center gap-3">
-                                  <div className="flex items-center bg-white rounded-lg border border-stone-300 flex-1 overflow-hidden h-10 shadow-sm">
+                                  <div className="flex items-center bg-white rounded-lg border border-stone-300 flex-1 overflow-hidden h-9 shadow-sm">
                                       <button 
                                         onClick={() => updateStockQuantity(item.id, -1)}
-                                        className="w-10 h-full flex items-center justify-center text-stone-500 hover:text-red-600 hover:bg-red-50 transition-colors border-r border-stone-200 active:bg-red-100"
+                                        className="w-8 h-full flex items-center justify-center text-stone-500 hover:text-red-600 hover:bg-red-50 transition-colors border-r border-stone-200"
                                       >
-                                        <Minus size={16} strokeWidth={2.5} />
+                                        <Minus size={14} strokeWidth={2.5} />
                                       </button>
                                       
                                       <input 
@@ -429,19 +484,19 @@ export const Layout: React.FC = () => {
                                             updateDailyItem(item.id, { dailyStock: 0, isAvailable: false });
                                           } else {
                                             let val = parseInt(valStr);
-                                            if (val > maxPossible) val = maxPossible; // Clamp Input
+                                            if (val > maxPossible) val = maxPossible;
                                             updateDailyItem(item.id, { dailyStock: val, isAvailable: true });
                                           }
                                         }}
-                                        className="w-full text-center outline-none text-base font-bold bg-transparent no-spinner text-stone-800 placeholder-stone-300"
+                                        className="w-full text-center outline-none text-sm font-bold bg-transparent no-spinner text-stone-800 placeholder-stone-300"
                                       />
 
                                       <button 
                                         onClick={() => updateStockQuantity(item.id, 1)}
                                         disabled={item.dailyStock >= maxPossible}
-                                        className="w-10 h-full flex items-center justify-center text-stone-500 hover:text-green-600 hover:bg-green-50 transition-colors border-l border-stone-200 active:bg-green-100 disabled:bg-stone-100 disabled:text-stone-300"
+                                        className="w-8 h-full flex items-center justify-center text-stone-500 hover:text-green-600 hover:bg-green-50 transition-colors border-l border-stone-200 disabled:bg-stone-100 disabled:text-stone-300"
                                       >
-                                        <Plus size={16} strokeWidth={2.5} />
+                                        <Plus size={14} strokeWidth={2.5} />
                                       </button>
                                   </div>
                                   
@@ -453,29 +508,12 @@ export const Layout: React.FC = () => {
                                             alert("วัตถุดิบหมด!");
                                         }
                                     }}
-                                    className={`h-10 px-2 flex items-center justify-center gap-1 rounded-lg border transition-colors shadow-sm font-bold text-[10px] ${item.dailyStock === maxPossible ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-stone-300 text-stone-500 hover:bg-stone-50'}`}
+                                    className={`h-9 px-2 flex items-center justify-center gap-1 rounded-lg border transition-colors shadow-sm font-bold text-[10px] ${item.dailyStock === maxPossible ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-stone-300 text-stone-500 hover:bg-stone-50'}`}
                                     title="Set to Smart Limit"
                                   >
                                     <ArrowUpToLine size={14} /> MAX
                                   </button>
                               </div>
-                              
-                              {/* Quick Add Buttons */}
-                              {item.dailyStock >= 0 && (
-                                <div className="flex gap-1 mt-2">
-                                 {[5, 10, 20].map(val => (
-                                   <button
-                                     key={val}
-                                     onClick={() => updateStockQuantity(item.id, val)}
-                                     disabled={item.dailyStock + val > maxPossible}
-                                     className="flex-1 py-1.5 bg-white border border-stone-200 rounded-lg text-xs font-bold text-stone-500 hover:text-green-600 hover:border-green-200 hover:bg-green-50 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                   >
-                                     +{val}
-                                   </button>
-                                 ))}
-                                </div>
-                              )}
-
                             </div>
                          </div>
                        );
@@ -485,14 +523,16 @@ export const Layout: React.FC = () => {
                  );
                })}
                
-               {dailyMenu.filter(m => m.name.toLowerCase().includes(menuSearch.toLowerCase())).length === 0 && (
-                 <div className="text-center p-8 text-stone-400">
-                    ไม่พบเมนูที่ค้นหา
+               {dailyMenu.filter(m => (activeCategoryTab === 'All' || m.category === activeCategoryTab) && m.name.toLowerCase().includes(menuSearch.toLowerCase())).length === 0 && (
+                 <div className="text-center p-12 text-stone-400 flex flex-col items-center">
+                    <Filter size={48} className="opacity-20 mb-2" />
+                    <p>ไม่พบเมนูในหมวดนี้</p>
+                    {showThaiOnly && <p className="text-xs mt-1">(ลองปิดตัวกรอง 'เฉพาะเมนูไทย' เพื่อดูรายการทั้งหมด)</p>}
                  </div>
                )}
             </div>
 
-            <div className="p-6 bg-white border-t border-stone-200 flex justify-between items-center">
+            <div className="p-6 bg-white border-t border-stone-200 flex justify-between items-center shadow-lg z-20">
                <div className="text-sm">
                  {!isMenuReady && (
                    <span className="flex items-center gap-2 text-red-500 font-bold bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 animate-pulse">
