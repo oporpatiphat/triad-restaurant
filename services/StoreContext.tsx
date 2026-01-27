@@ -435,14 +435,28 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const deleteSession = async (sessionId: string) => {
+    // Check if we are deleting an open session to handle Force Close
+    const sessionToDelete = sessionHistory.find(s => s.id === sessionId);
+    const isDeletingOpenSession = sessionToDelete && !sessionToDelete.closedAt;
+
     if (isCloudMode && db) {
-        await deleteDoc(doc(db!, 'sessions', sessionId));
+        const batch = writeBatch(db!);
+        batch.delete(doc(db!, 'sessions', sessionId));
+        if (isDeletingOpenSession) {
+             batch.update(doc(db!, 'config', 'session'), { isOpen: false, closedAt: new Date() });
+        }
+        await batch.commit();
     } else {
         setSessionHistory(prev => {
             const next = prev.filter(s => s.id !== sessionId);
             saveToStorage(KEYS.SESSIONS_HISTORY, next);
             return next;
         });
+        if (isDeletingOpenSession) {
+             const closedSession = { ...storeSession, isOpen: false, closedAt: new Date() };
+             setStoreSession(closedSession);
+             saveToStorage(KEYS.SESSION, closedSession);
+        }
     }
   };
 

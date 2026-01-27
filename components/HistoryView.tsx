@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin, Trash2, ChevronLeft, Package, ShoppingBag } from 'lucide-react';
+import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin, Trash2, ChevronLeft, Package, ShoppingBag, AlertTriangle } from 'lucide-react';
 import { Order, SessionRecord } from '../types';
 
 export const HistoryView: React.FC = () => {
@@ -42,9 +42,14 @@ export const HistoryView: React.FC = () => {
      }
   };
 
-  const handleDeleteSession = (sessionId: string) => {
-      if (confirm("คำเตือน: คุณต้องการลบประวัติการเปิดร้านรอบนี้ใช่หรือไม่? ข้อมูลสรุปยอดขายจะหายไปถาวร")) {
-          deleteSession(sessionId);
+  const handleDeleteSession = (session: SessionRecord) => {
+      let msg = "คำเตือน: คุณต้องการลบประวัติการเปิดร้านรอบนี้ใช่หรือไม่? ข้อมูลสรุปยอดขายจะหายไปถาวร";
+      if (!session.closedAt) {
+          msg = "⚠️ คำเตือนสำคัญ: คุณกำลังจะลบ Session ที่สถานะ 'เปิดอยู่' (Open)\n\nการทำเช่นนี้จะทำการ 'บังคับปิดร้าน' (Force Close) ทันที และลบประวัตินี้ออก\n\nยืนยันหรือไม่?";
+      }
+
+      if (confirm(msg)) {
+          deleteSession(session.id);
       }
   }
 
@@ -109,11 +114,12 @@ export const HistoryView: React.FC = () => {
                           >
                              <Eye size={18} />
                           </button>
-                          {isAdmin && session.closedAt && (
+                          {/* CHANGED: Allow admin to delete ANY session, even if open (to fix ghost sessions) */}
+                          {isAdmin && (
                               <button 
-                                onClick={() => handleDeleteSession(session.id)}
+                                onClick={() => handleDeleteSession(session)}
                                 className="p-2 hover:bg-red-50 text-stone-300 hover:text-red-600 rounded-lg transition-colors"
-                                title="ลบประวัติ"
+                                title={!session.closedAt ? "ลบและปิด Session ที่ค้างอยู่" : "ลบประวัติ"}
                               >
                                  <Trash2 size={18} />
                               </button>
