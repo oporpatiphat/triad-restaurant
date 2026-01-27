@@ -639,72 +639,108 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // Cancel order logic - WITH RESTOCKING
+  // Cancel order logic - WITH RESTOCKING (Fixed for Cloud Transaction Read-After-Write)
   const cancelOrder = async (orderId: string) => {
-      // 1. Find the order
+      // 1. Find the order locally first (optional, mostly for local mode logic)
       const order = orders.find(o => o.id === orderId);
-      if (!order) return;
+      if (!order && !isCloudMode) return;
 
       if (isCloudMode && db) {
           try {
               await runTransaction(db, async (transaction) => {
+                  // --- READ PHASE: Must do ALL reads before ANY writes ---
+                  
+                  // 1. Get Order
                   const orderRef = doc(db!, 'orders', orderId);
                   const orderDoc = await transaction.get(orderRef);
                   if (!orderDoc.exists()) throw "Order not found";
                   const orderData = orderDoc.data() as Order;
+                  
+                  // 2. Get Table
                   const tableRef = doc(db!, 'tables', orderData.tableId);
+                  const tableDoc = await transaction.get(tableRef);
 
-                  const menuUpdates = new Map<string, number>(); 
-                  const ingredientUpdates = new Map<string, number>(); 
+                  // 3. Identify Involved Menus
+                  const menuIds = new Set<string>();
+                  const menuQtyToRestore = new Map<string, number>(); // MenuID -> Qty
+                  
+                  orderData.items.forEach(item => {
+                      menuIds.add(item.menuItemId);
+                      menuQtyToRestore.set(item.menuItemId, (menuQtyToRestore.get(item.menuItemId) || 0) + item.quantity);
+                  });
 
-                  // Calculate refunds
-                  for (const item of orderData.items) {
-                      menuUpdates.set(item.menuItemId, (menuUpdates.get(item.menuItemId) || 0) + item.quantity);
-                      
-                      // Using local menu state for mapping (assuming sync)
-                      const menuItem = menu.find(m => m.id === item.menuItemId);
-                      if (menuItem) {
-                           menuItem.ingredients.forEach(ingName => {
-                               ingredientUpdates.set(ingName, (ingredientUpdates.get(ingName) || 0) + item.quantity);
-                           });
-                      }
-                  }
+                  // 4. Get Menu Docs
+                  const menuRefs = Array.from(menuIds).map(id => doc(db!, 'menu', id));
+                  const menuDocs = await Promise.all(menuRefs.map(ref => transaction.get(ref)));
 
-                  // Restore Menu Stock
-                  for (const [mId, qty] of menuUpdates) {
-                       const mRef = doc(db!, 'menu', mId);
-                       const mDoc = await transaction.get(mRef);
-                       if (mDoc.exists()) {
-                           const mData = mDoc.data() as MenuItem;
-                           if (mData.dailyStock !== -1) {
-                               transaction.update(mRef, { dailyStock: mData.dailyStock + qty, isAvailable: true });
-                           }
-                       }
-                  }
-
-                  // Restore Inventory
-                  for (const [ingName, qty] of ingredientUpdates) {
-                      const ingObj = inventory.find(i => i.name === ingName);
-                      if (ingObj) {
-                          const iRef = doc(db!, 'inventory', ingObj.id);
-                          const iDoc = await transaction.get(iRef);
-                          if (iDoc.exists()) {
-                              const iData = iDoc.data() as Ingredient;
-                              transaction.update(iRef, { quantity: iData.quantity + qty });
+                  // 5. Identify Involved Ingredients (Using fetched Menu Data)
+                  const ingredientNeededRestock = new Map<string, number>(); // Name -> Qty
+                  
+                  for (const mDoc of menuDocs) {
+                      if (mDoc.exists()) {
+                          const mData = mDoc.data() as MenuItem;
+                          const qty = menuQtyToRestore.get(mDoc.id) || 0;
+                          
+                          if (qty > 0 && mData.ingredients) {
+                               mData.ingredients.forEach(ingName => {
+                                   ingredientNeededRestock.set(ingName, (ingredientNeededRestock.get(ingName) || 0) + qty);
+                               });
                           }
                       }
                   }
+
+                  // 6. Map Ingredient Names to IDs (Using local inventory state as ID lookup)
+                  // Note: StoreContext inventory is synced, so IDs should be valid.
+                  const inventoryIds = new Set<string>();
+                  ingredientNeededRestock.forEach((_, name) => {
+                      const invItem = inventory.find(i => i.name === name);
+                      if (invItem) inventoryIds.add(invItem.id);
+                  });
+
+                  // 7. Get Inventory Docs
+                  const inventoryRefs = Array.from(inventoryIds).map(id => doc(db!, 'inventory', id));
+                  const inventoryDocs = await Promise.all(inventoryRefs.map(ref => transaction.get(ref)));
+
+
+                  // --- WRITE PHASE: Do all writes now ---
+                  
+                  // Restore Menu Stocks
+                  menuDocs.forEach(mDoc => {
+                       if (mDoc.exists()) {
+                           const mData = mDoc.data() as MenuItem;
+                           const qty = menuQtyToRestore.get(mDoc.id) || 0;
+                           if (mData.dailyStock !== -1 && qty > 0) {
+                               transaction.update(mDoc.ref, { 
+                                   dailyStock: mData.dailyStock + qty,
+                                   isAvailable: true 
+                               });
+                           }
+                       }
+                  });
+
+                  // Restore Inventory Stocks
+                  inventoryDocs.forEach(iDoc => {
+                      if (iDoc.exists()) {
+                          const iData = iDoc.data() as Ingredient;
+                          const qty = ingredientNeededRestock.get(iData.name) || 0;
+                          if (qty > 0) {
+                              transaction.update(iDoc.ref, { quantity: iData.quantity + qty });
+                          }
+                      }
+                  });
 
                   // Cancel Order & Free Table
                   transaction.update(orderRef, { status: OrderStatus.CANCELLED });
                   transaction.update(tableRef, { status: TableStatus.AVAILABLE, currentOrderId: null });
               });
+              console.log("Cancel Order Transaction Success");
           } catch (e) {
               console.error("Cancel Transaction failed", e);
               alert("เกิดข้อผิดพลาดในการยกเลิก: " + e);
           }
       } else {
           // --- LOCAL MODE ---
+          if (!order) return;
           // 1. Restore Inventory
           const ingredientsToRestore = new Map<string, number>();
           order.items.forEach(item => {
