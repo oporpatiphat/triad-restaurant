@@ -1,6 +1,8 @@
+
+
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin, Trash2, ChevronLeft } from 'lucide-react';
+import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin, Trash2, ChevronLeft, Package, ShoppingBag } from 'lucide-react';
 import { Order, Role, SessionRecord } from '../types';
 
 export const HistoryView: React.FC = () => {
@@ -170,6 +172,7 @@ export const HistoryView: React.FC = () => {
                       </td>
                       <td className="p-4 text-stone-500 max-w-xs truncate">
                         {o.items.length} รายการ
+                        {(o.boxCount || 0) > 0 && <span className="ml-1 text-xs text-orange-500">+Box</span>}
                       </td>
                       <td className="p-4 text-center">
                         {o.paymentMethod === 'CARD' ? (
@@ -283,6 +286,20 @@ export const HistoryView: React.FC = () => {
                                   <td className="py-1 text-right font-mono text-stone-800">{item.price * item.quantity}</td>
                                </tr>
                              ))}
+                             {(selectedOrder.boxCount || 0) > 0 && (
+                                <tr className="text-orange-700 bg-orange-50/50">
+                                   <td className="py-1 pl-1 flex items-center gap-1"><Package size={12}/> ค่ากล่อง</td>
+                                   <td className="py-1 text-center font-mono">x{selectedOrder.boxCount}</td>
+                                   <td className="py-1 text-right font-mono font-bold">{(selectedOrder.boxCount || 0) * 100}</td>
+                                </tr>
+                             )}
+                             {(selectedOrder.bagCount || 0) > 0 && (
+                                <tr className="text-blue-700 bg-blue-50/50">
+                                   <td className="py-1 pl-1 flex items-center gap-1"><ShoppingBag size={12}/> ค่าถุง</td>
+                                   <td className="py-1 text-center font-mono">x{selectedOrder.bagCount}</td>
+                                   <td className="py-1 text-right font-mono font-bold">0</td>
+                                </tr>
+                             )}
                           </tbody>
                        </table>
                     </div>

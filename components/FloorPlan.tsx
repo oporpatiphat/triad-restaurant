@@ -1,7 +1,9 @@
+
+
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem } from '../types';
-import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package } from 'lucide-react';
+import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package, ShoppingBag } from 'lucide-react';
 
 export const FloorPlan: React.FC = () => {
   const { tables, menu, inventory, createOrder, updateOrderStatus, orders } = useStore();
@@ -13,7 +15,8 @@ export const FloorPlan: React.FC = () => {
   const [orderBasket, setOrderBasket] = useState<OrderItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [includeBox, setIncludeBox] = useState(false); // New State for Box Fee
+  const [boxCount, setBoxCount] = useState(0); 
+  const [bagCount, setBagCount] = useState(0); 
 
   const availableMenu = menu.filter(m => m.isAvailable && m.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -33,7 +36,8 @@ export const FloorPlan: React.FC = () => {
     setSearchTerm('');
     setCustomerName('');
     setCustomerClass(CustomerClass.MIDDLE);
-    setIncludeBox(false);
+    setBoxCount(0);
+    setBagCount(0);
   };
 
   const addToBasket = (item: MenuItem) => {
@@ -89,7 +93,7 @@ export const FloorPlan: React.FC = () => {
     setIsSubmitting(true);
     
     // Await the creation process
-    const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, includeBox);
+    const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, boxCount, bagCount);
     
     setIsSubmitting(false);
 
@@ -409,13 +413,22 @@ export const FloorPlan: React.FC = () => {
                 ) : (
                     // CURRENT ORDER ITEMS VIEW
                     <div className="space-y-2">
-                      {currentActiveOrder?.hasBoxFee && (
+                      {(currentActiveOrder?.boxCount || 0) > 0 && (
                         <div className="flex justify-between items-center p-3 bg-orange-50 border border-orange-100 rounded-xl">
                             <div className="flex gap-2 items-center">
                               <Package size={16} className="text-orange-600"/>
-                              <span className="font-bold text-stone-800 text-sm">ค่ากล่อง (Box Fee)</span>
+                              <span className="font-bold text-stone-800 text-sm">กล่อง x{currentActiveOrder?.boxCount}</span>
                             </div>
-                            <div className="text-sm font-bold text-stone-600">฿100</div>
+                            <div className="text-sm font-bold text-stone-600">฿{(currentActiveOrder?.boxCount || 0) * 100}</div>
+                        </div>
+                      )}
+                      {(currentActiveOrder?.bagCount || 0) > 0 && (
+                        <div className="flex justify-between items-center p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                            <div className="flex gap-2 items-center">
+                              <ShoppingBag size={16} className="text-blue-600"/>
+                              <span className="font-bold text-stone-800 text-sm">ถุง x{currentActiveOrder?.bagCount}</span>
+                            </div>
+                            <div className="text-sm font-bold text-green-600">Free</div>
                         </div>
                       )}
                       {currentActiveOrder?.items.map((item, idx) => (
@@ -432,21 +445,41 @@ export const FloorPlan: React.FC = () => {
               </div>
 
               <div className="p-6 bg-white border-t border-stone-100">
-                {/* Box Fee Checkbox for New Orders */}
+                {/* Box & Bag Controls for New Orders */}
                 {selectedTable.status === TableStatus.AVAILABLE && orderBasket.length > 0 && (
-                   <label className="flex items-center gap-2 mb-4 p-3 rounded-lg border border-stone-200 cursor-pointer hover:bg-stone-50 transition-colors">
-                      <input 
-                        type="checkbox" 
-                        className="w-5 h-5 accent-red-600"
-                        checked={includeBox}
-                        onChange={(e) => setIncludeBox(e.target.checked)}
-                      />
-                      <div className="flex-1">
-                         <span className="text-sm font-bold text-stone-700 block">เพิ่มกล่อง (Box)</span>
-                         <span className="text-xs text-stone-400">คิดค่าบริการเพิ่ม +100 LS$</span>
-                      </div>
-                      <span className="font-bold text-stone-600">+100</span>
-                   </label>
+                   <div className="space-y-2 mb-4">
+                       {/* Box Control */}
+                       <div className="flex items-center justify-between p-2 rounded-lg border border-stone-200 bg-orange-50/50">
+                           <div className="flex items-center gap-2">
+                               <Package size={18} className="text-orange-600" />
+                               <div>
+                                   <div className="text-sm font-bold text-stone-700">กล่อง (Box)</div>
+                                   <div className="text-xs text-stone-400">+100 / unit</div>
+                               </div>
+                           </div>
+                           <div className="flex items-center gap-2">
+                               <button onClick={() => setBoxCount(Math.max(0, boxCount - 1))} className="p-1 rounded-md bg-white border border-stone-200 hover:bg-stone-100 text-stone-500"><Minus size={14}/></button>
+                               <span className="font-bold w-6 text-center text-stone-800">{boxCount}</span>
+                               <button onClick={() => setBoxCount(boxCount + 1)} className="p-1 rounded-md bg-white border border-stone-200 hover:bg-stone-100 text-stone-500"><Plus size={14}/></button>
+                           </div>
+                       </div>
+
+                       {/* Bag Control */}
+                       <div className="flex items-center justify-between p-2 rounded-lg border border-stone-200 bg-blue-50/50">
+                           <div className="flex items-center gap-2">
+                               <ShoppingBag size={18} className="text-blue-600" />
+                               <div>
+                                   <div className="text-sm font-bold text-stone-700">ถุง (Bag)</div>
+                                   <div className="text-xs text-green-600 font-bold">Free</div>
+                               </div>
+                           </div>
+                           <div className="flex items-center gap-2">
+                               <button onClick={() => setBagCount(Math.max(0, bagCount - 1))} className="p-1 rounded-md bg-white border border-stone-200 hover:bg-stone-100 text-stone-500"><Minus size={14}/></button>
+                               <span className="font-bold w-6 text-center text-stone-800">{bagCount}</span>
+                               <button onClick={() => setBagCount(bagCount + 1)} className="p-1 rounded-md bg-white border border-stone-200 hover:bg-stone-100 text-stone-500"><Plus size={14}/></button>
+                           </div>
+                       </div>
+                   </div>
                 )}
 
                 <div className="flex justify-between text-stone-500 mb-2 text-sm">
@@ -461,7 +494,7 @@ export const FloorPlan: React.FC = () => {
                   <span>รวมทั้งสิ้น</span>
                   <span className="text-red-600">฿
                      {(selectedTable.status === TableStatus.AVAILABLE 
-                        ? orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + (includeBox ? 100 : 0)
+                        ? orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + (boxCount * 100)
                         : currentActiveOrder?.totalAmount || 0).toLocaleString()}
                   </span>
                 </div>

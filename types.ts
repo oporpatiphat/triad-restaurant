@@ -1,4 +1,5 @@
 
+
 export enum Role {
   OWNER = 'OWNER',
   CHEF = 'CHEF',
@@ -72,7 +73,8 @@ export interface Order {
   chefName?: string;  // Who cooked it
   serverName?: string; // Who served it
   paymentMethod?: 'CASH' | 'CARD'; // New field
-  hasBoxFee?: boolean; // New: +100 LS$ fee
+  boxCount?: number; // New: Number of boxes (100 per unit)
+  bagCount?: number; // New: Number of bags (Free)
 }
 
 export type MenuCategory = 'Main Dish' | 'Appetizer' | 'Soup' | 'Drink' | 'Set' | 'Other';

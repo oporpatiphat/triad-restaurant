@@ -1,3 +1,5 @@
+
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem, Role, SessionRecord } from '../types';
 import { generateTables, INITIAL_INGREDIENTS, INITIAL_MENU, MOCK_USERS, INITIAL_POSITIONS } from '../constants';
@@ -15,7 +17,7 @@ interface StoreContextType {
   tables: Table[];
   updateTableStatus: (tableId: string, status: TableStatus) => void;
   orders: Order[];
-  createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], hasBoxFee: boolean) => Promise<boolean>;
+  createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, bagCount: number) => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
   toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; // New
   cancelOrder: (orderId: string, reason?: string) => void; // New
@@ -422,9 +424,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], hasBoxFee: boolean): Promise<boolean> => {
+  const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, bagCount: number): Promise<boolean> => {
     try {
-        const boxFee = hasBoxFee ? 100 : 0;
+        const boxFee = (boxCount || 0) * 100;
         const totalAmount = items.reduce((sum, i) => sum + (i.price * i.quantity), 0) + boxFee;
 
         if (isCloudMode && db) {
@@ -475,7 +477,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     status: OrderStatus.PENDING,
                     totalAmount,
                     timestamp: new Date(),
-                    hasBoxFee
+                    boxCount: boxCount,
+                    bagCount: bagCount
                 };
 
                 transaction.set(doc(db!, 'orders', newOrder.id), newOrder);
@@ -530,7 +533,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 status: OrderStatus.PENDING,
                 totalAmount,
                 timestamp: new Date(),
-                hasBoxFee
+                boxCount: boxCount,
+                bagCount: bagCount
             };
 
             let updatedOrders: Order[] = [];
