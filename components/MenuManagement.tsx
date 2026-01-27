@@ -2,13 +2,15 @@
 
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2, Edit } from 'lucide-react';
+import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2, Edit, Store, Globe } from 'lucide-react';
 import { MenuItem } from '../types';
 
 export const MenuManagement: React.FC = () => {
   const { menu, addMenuItem, updateMenuItem, deleteMenuItem, toggleMenuAvailability, inventory } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  
+  // Default new item to TRIAD source
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({
     name: '',
     description: '',
@@ -16,11 +18,14 @@ export const MenuManagement: React.FC = () => {
     cost: 0,
     category: 'Main Dish',
     ingredients: [],
-    isAvailable: true
+    isAvailable: true,
+    source: 'TRIAD'
   });
 
   const handleEdit = (item: MenuItem) => {
-    setNewItem(item);
+    // If source is missing (old data), assume TRIAD if Thai chars, else OTHER, or just default to TRIAD
+    const guessedSource = item.source || 'TRIAD';
+    setNewItem({ ...item, source: guessedSource });
     setIsEditing(true);
     setShowForm(true);
   };
@@ -33,7 +38,8 @@ export const MenuManagement: React.FC = () => {
       cost: 0, 
       category: 'Main Dish', 
       isAvailable: true, 
-      ingredients: [] 
+      ingredients: [],
+      source: 'TRIAD'
     });
     setIsEditing(false);
     setShowForm(true);
@@ -54,7 +60,8 @@ export const MenuManagement: React.FC = () => {
           category: newItem.category || 'Main Dish',
           ingredients: newItem.ingredients || [],
           isAvailable: true,
-          dailyStock: -1
+          dailyStock: -1,
+          source: newItem.source || 'TRIAD'
         });
       }
       setShowForm(false);
@@ -132,6 +139,27 @@ export const MenuManagement: React.FC = () => {
             <div className="p-6 overflow-y-auto bg-white flex-1">
               <form onSubmit={handleSubmit} className="space-y-5">
                 
+                {/* Source Selector */}
+                <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 flex flex-col gap-2">
+                    <label className="text-xs font-bold text-stone-500 uppercase">เจ้าของเมนู (Shop Source)</label>
+                    <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setNewItem({...newItem, source: 'TRIAD'})}
+                          className={`flex-1 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${newItem.source === 'TRIAD' ? 'bg-red-600 text-white shadow-md' : 'bg-white text-stone-500 border border-stone-300'}`}
+                        >
+                           <Store size={18} /> ร้าน Triad (เรา)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewItem({...newItem, source: 'OTHER'})}
+                          className={`flex-1 py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${newItem.source === 'OTHER' ? 'bg-stone-600 text-white shadow-md' : 'bg-white text-stone-500 border border-stone-300'}`}
+                        >
+                           <Globe size={18} /> ร้านอื่น (ฝากขาย/อื่นๆ)
+                        </button>
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {/* Name */}
                   <div className="col-span-2 md:col-span-1">
@@ -283,7 +311,9 @@ export const MenuManagement: React.FC = () => {
                         {cat}
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {items.map(item => (
+                        {items.map(item => {
+                            const isTriad = item.source !== 'OTHER'; // Default to Triad if undefined
+                            return (
                         <div key={item.id} className={`bg-white p-5 rounded-2xl shadow-sm border transition-all hover:shadow-md group relative ${item.isAvailable ? 'border-stone-200' : 'border-stone-200 bg-stone-50 opacity-80'}`}>
                             
                             {/* Action Buttons (Visible on Hover) */}
@@ -305,7 +335,11 @@ export const MenuManagement: React.FC = () => {
                             </div>
 
                             <div className="flex justify-between items-start mb-3">
-                                <h3 className={`font-bold text-lg line-clamp-1 ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`}>{item.name}</h3>
+                                <div>
+                                    <h3 className={`font-bold text-lg line-clamp-1 ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`}>{item.name}</h3>
+                                    {!isTriad && <span className="text-[10px] bg-stone-200 text-stone-500 px-1 rounded inline-block mt-0.5">ร้านอื่น</span>}
+                                    {isTriad && <span className="text-[10px] bg-red-50 text-red-500 px-1 rounded inline-block mt-0.5">Triad</span>}
+                                </div>
                                 <button 
                                   onClick={() => toggleMenuAvailability(item.id)}
                                   className={`transition-colors ${item.isAvailable ? 'text-green-500 hover:text-green-600' : 'text-stone-300 hover:text-stone-400'}`}
@@ -343,7 +377,7 @@ export const MenuManagement: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                        ))}
+                        )})}
                     </div>
                 </div>
             )

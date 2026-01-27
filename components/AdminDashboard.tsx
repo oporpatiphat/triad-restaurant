@@ -1,6 +1,8 @@
+
+
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus, Activity, RefreshCw, AlertTriangle, CloudOff, Database } from 'lucide-react';
+import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus, Activity, RefreshCw, AlertTriangle, CloudOff, Database, Store, Globe, Filter } from 'lucide-react';
 import { OrderStatus, TableStatus } from '../types';
 
 export const AdminDashboard: React.FC = () => {
@@ -11,6 +13,10 @@ export const AdminDashboard: React.FC = () => {
   const [menuQuantities, setMenuQuantities] = useState<Record<string, number>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  
+  // NEW: Shop Filter State
+  const [shopFilter, setShopFilter] = useState<'ALL' | 'TRIAD' | 'OTHER'>('ALL');
+
   const [calculationResult, setCalculationResult] = useState<any[]>([]);
   const [isCopied, setIsCopied] = useState(false);
 
@@ -19,9 +25,16 @@ export const AdminDashboard: React.FC = () => {
     return menu.filter(m => {
       const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = categoryFilter === 'All' || m.category === categoryFilter;
-      return matchesSearch && matchesCategory;
+      
+      let matchesShop = true;
+      const isTriad = m.source !== 'OTHER'; // Default undefined as Triad
+      
+      if (shopFilter === 'TRIAD') matchesShop = isTriad;
+      if (shopFilter === 'OTHER') matchesShop = !isTriad;
+
+      return matchesSearch && matchesCategory && matchesShop;
     });
-  }, [menu, searchTerm, categoryFilter]);
+  }, [menu, searchTerm, categoryFilter, shopFilter]);
 
   const activeCount = (Object.values(menuQuantities) as number[]).filter(q => q > 0).length;
 
@@ -167,6 +180,8 @@ export const AdminDashboard: React.FC = () => {
          <div className="w-7/12 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col overflow-hidden">
             {/* Toolbar */}
             <div className="p-4 border-b border-stone-200 bg-stone-50 space-y-3">
+               
+               {/* Search & Clear */}
                <div className="flex gap-2">
                  <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
@@ -184,7 +199,30 @@ export const AdminDashboard: React.FC = () => {
                     </button>
                  )}
                </div>
+
+               {/* Shop Filter (Source) */}
+               <div className="flex gap-2 p-1 bg-stone-200 rounded-lg w-full">
+                  <button 
+                    onClick={() => setShopFilter('ALL')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-bold transition-all ${shopFilter === 'ALL' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+                  >
+                    <Filter size={14} /> ทั้งหมด (All)
+                  </button>
+                  <button 
+                    onClick={() => setShopFilter('TRIAD')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-bold transition-all ${shopFilter === 'TRIAD' ? 'bg-red-600 text-white shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+                  >
+                    <Store size={14} /> ร้าน Triad Only
+                  </button>
+                  <button 
+                    onClick={() => setShopFilter('OTHER')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-md text-xs font-bold transition-all ${shopFilter === 'OTHER' ? 'bg-stone-600 text-white shadow-sm' : 'text-stone-500 hover:text-stone-700'}`}
+                  >
+                    <Globe size={14} /> ร้านอื่น (Other)
+                  </button>
+               </div>
                
+               {/* Category Filter */}
                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
                   {menuCategories.map(cat => (
                     <button
@@ -192,7 +230,7 @@ export const AdminDashboard: React.FC = () => {
                       onClick={() => setCategoryFilter(cat)}
                       className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-bold transition-colors border ${
                         categoryFilter === cat 
-                          ? 'bg-red-600 text-white border-red-600' 
+                          ? 'bg-stone-800 text-white border-stone-800' 
                           : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
                       }`}
                     >
@@ -250,7 +288,7 @@ export const AdminDashboard: React.FC = () => {
                    </div>
                  );
                })}
-               {displayedMenus.length === 0 && <div className="text-center p-10 text-stone-400">ไม่พบเมนู</div>}
+               {displayedMenus.length === 0 && <div className="text-center p-10 text-stone-400">ไม่พบเมนูในหมวดนี้</div>}
             </div>
 
             <div className="p-4 border-t border-stone-200 bg-white">

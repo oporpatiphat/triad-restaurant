@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
 import { Role, OrderStatus, MenuItem } from '../types';
-import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Cloud, CloudOff, ArrowUpToLine, Filter, Type } from 'lucide-react';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Cloud, CloudOff, ArrowUpToLine, Filter, Type, Store, Globe } from 'lucide-react';
 
 export const Layout: React.FC = () => {
   const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, inventory, isCloudMode } = useStore();
@@ -225,6 +225,7 @@ export const Layout: React.FC = () => {
   const isMenuReady = dailyMenu.some(m => m.isAvailable);
 
   // Helper to detect Thai characters (Triad Menu) vs English (Other Shop)
+  // FALLBACK if source is not set.
   const isThai = (text: string) => /[ก-๙]/.test(text);
 
   return (
@@ -368,8 +369,8 @@ export const Layout: React.FC = () => {
                     onClick={() => setShowThaiOnly(!showThaiOnly)}
                     className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 border transition-all ${showThaiOnly ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-white text-stone-500 border-stone-300 hover:bg-stone-100'}`}
                   >
-                     <Type size={16} />
-                     {showThaiOnly ? 'เฉพาะเมนูไทย (Triad Only)' : 'แสดงทั้งหมด (Show All)'}
+                     {showThaiOnly ? <Store size={16} /> : <Globe size={16} />}
+                     {showThaiOnly ? 'เฉพาะเมนูร้าน Triad' : 'แสดงทุกร้าน (All Shops)'}
                   </button>
                </div>
                
@@ -403,9 +404,10 @@ export const Layout: React.FC = () => {
                    m.name.toLowerCase().includes(menuSearch.toLowerCase())
                  );
                  
-                 // Apply Thai Filter
+                 // Apply Thai/Triad Filter
                  if (showThaiOnly) {
-                     categoryItems = categoryItems.filter(m => isThai(m.name));
+                     // Prefer Source field if exists, otherwise fallback to Thai check
+                     categoryItems = categoryItems.filter(m => m.source ? m.source === 'TRIAD' : isThai(m.name));
                  }
                  
                  if (categoryItems.length === 0) return null;
@@ -420,15 +422,17 @@ export const Layout: React.FC = () => {
                        {categoryItems.map(item => {
                          const maxPossible = getMaxPossibleStock(item);
                          const isStockLow = maxPossible < 5;
-                         const isThaiItem = isThai(item.name);
+                         
+                         // Visual Style based on Shop Source
+                         const isTriad = item.source ? item.source === 'TRIAD' : isThai(item.name);
                          
                          return (
                          <div 
                            key={item.id} 
                            className={`p-4 rounded-xl border-2 transition-all shadow-sm ${
                              item.isAvailable 
-                               ? (isThaiItem ? 'border-amber-400 bg-amber-50/10 ring-1 ring-amber-100/50' : 'border-green-500/30 bg-white') 
-                               : (isThaiItem ? 'border-stone-200 bg-white' : 'border-stone-100 bg-stone-50 opacity-60 grayscale-[0.5] hover:opacity-100 hover:grayscale-0')
+                               ? (isTriad ? 'border-amber-400 bg-amber-50/10 ring-1 ring-amber-100/50' : 'border-stone-300 bg-white') 
+                               : (isTriad ? 'border-stone-200 bg-white' : 'border-stone-100 bg-stone-50 opacity-60 grayscale-[0.5] hover:opacity-100 hover:grayscale-0')
                            }`}
                          >
                             <div className="flex justify-between items-start mb-3">
@@ -436,7 +440,7 @@ export const Layout: React.FC = () => {
                                   <div className={`font-bold line-clamp-2 ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`} style={{minHeight: '40px'}}>{item.name}</div>
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="text-[10px] text-stone-400 uppercase tracking-wide">{item.category}</span>
-                                    {!isThaiItem && <span className="text-[10px] bg-stone-200 text-stone-500 px-1 rounded">Other</span>}
+                                    {!isTriad && <span className="text-[10px] bg-stone-200 text-stone-500 px-1 rounded">Other</span>}
                                   </div>
                                </div>
                                <button 
@@ -527,7 +531,7 @@ export const Layout: React.FC = () => {
                  <div className="text-center p-12 text-stone-400 flex flex-col items-center">
                     <Filter size={48} className="opacity-20 mb-2" />
                     <p>ไม่พบเมนูในหมวดนี้</p>
-                    {showThaiOnly && <p className="text-xs mt-1">(ลองปิดตัวกรอง 'เฉพาะเมนูไทย' เพื่อดูรายการทั้งหมด)</p>}
+                    {showThaiOnly && <p className="text-xs mt-1">(ลองปิดตัวกรอง 'เฉพาะเมนูร้าน Triad' เพื่อดูรายการทั้งหมด)</p>}
                  </div>
                )}
             </div>
