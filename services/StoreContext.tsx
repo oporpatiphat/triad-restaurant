@@ -659,6 +659,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   // 2. Get Table
                   const tableRef = doc(db!, 'tables', orderData.tableId);
                   const tableDoc = await transaction.get(tableRef);
+                  if (!tableDoc.exists()) throw "Table not found";
 
                   // 3. Identify Involved Menus
                   const menuIds = new Set<string>();
