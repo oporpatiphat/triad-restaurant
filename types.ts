@@ -29,7 +29,7 @@ export enum TableStatus {
 export interface Table {
   id: string;
   number: string;
-  floor: 'GROUND' | 'UPPER';
+  floor: 'GROUND' | 'UPPER' | 'DELIVERY'; // Added DELIVERY
   status: TableStatus;
   capacity: number;
   currentOrderId?: string;

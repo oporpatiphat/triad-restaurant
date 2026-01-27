@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem } from '../types';
-import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package, ShoppingBag } from 'lucide-react';
+import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package, ShoppingBag, Truck } from 'lucide-react';
 
 export const FloorPlan: React.FC = () => {
   const { tables, menu, inventory, createOrder, updateOrderStatus, orders } = useStore();
@@ -138,50 +138,65 @@ export const FloorPlan: React.FC = () => {
     return 'ไม่ว่าง';
   }
 
-  const renderFloorSection = (floor: 'GROUND' | 'UPPER', title: string) => (
-    <div className="mb-10">
-      <h3 className="text-xl font-bold text-stone-600 mb-4 px-2 border-l-4 border-red-600">{title}</h3>
-      <div className="grid grid-cols-4 gap-8">
-        {tables.filter(t => t.floor === floor).map(table => {
-          const order = orders.find(o => o.id === table.currentOrderId);
-          const isWaitingPay = order?.status === OrderStatus.WAITING_PAYMENT;
-          
-          return (
-          <button
-            key={table.id}
-            onClick={() => handleTableClick(table)}
-            className={`group relative aspect-square rounded-[2rem] border-4 transition-all duration-300 transform hover:-translate-y-2 hover:shadow-2xl flex flex-col items-center justify-center
-              ${getTableStatusColor(table)}`}
-          >
-            {/* Chair Decoration */}
-            <div className={`absolute -top-3 w-1/2 h-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
-            <div className={`absolute -bottom-3 w-1/2 h-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
-            <div className={`absolute -left-3 h-1/2 w-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
-            <div className={`absolute -right-3 h-1/2 w-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+  const renderFloorSection = (floor: 'GROUND' | 'UPPER' | 'DELIVERY', title: string) => {
+    const isDelivery = floor === 'DELIVERY';
+    return (
+      <div className="mb-10">
+        <h3 className={`text-xl font-bold text-stone-600 mb-4 px-2 border-l-4 ${isDelivery ? 'border-orange-500 text-orange-700' : 'border-red-600'}`}>{title}</h3>
+        <div className="grid grid-cols-4 gap-8">
+          {tables.filter(t => t.floor === floor).map(table => {
+            const order = orders.find(o => o.id === table.currentOrderId);
+            const isWaitingPay = order?.status === OrderStatus.WAITING_PAYMENT;
+            
+            return (
+            <button
+              key={table.id}
+              onClick={() => handleTableClick(table)}
+              className={`group relative aspect-square rounded-[2rem] border-4 transition-all duration-300 transform hover:-translate-y-2 hover:shadow-2xl flex flex-col items-center justify-center
+                ${getTableStatusColor(table)}`}
+            >
+              {/* Table Decoration */}
+              {!isDelivery && (
+                  <>
+                  <div className={`absolute -top-3 w-1/2 h-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+                  <div className={`absolute -bottom-3 w-1/2 h-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+                  <div className={`absolute -left-3 h-1/2 w-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+                  <div className={`absolute -right-3 h-1/2 w-2 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-stone-300' : isWaitingPay ? 'bg-blue-300' : 'bg-red-300'}`}></div>
+                  </>
+              )}
 
-            <div className="text-5xl font-heading font-bold mb-1">{table.number}</div>
-            <div className={`text-sm font-bold uppercase mb-2 ${table.status === TableStatus.AVAILABLE ? 'text-green-600' : isWaitingPay ? 'text-blue-600' : 'text-red-600'}`}>
-                {getTableStatusText(table)}
-            </div>
-            
-            <div className="flex items-center gap-1.5 text-sm font-medium opacity-60 bg-white/50 px-3 py-1 rounded-full">
-              <Users size={16} /> {table.capacity}
-            </div>
-            
-            {/* Status Dot */}
-            <div className={`absolute top-4 right-4 w-4 h-4 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-green-500' : isWaitingPay ? 'bg-blue-500 animate-bounce' : 'bg-red-500'} ring-4 ring-white`}></div>
-            
-            {/* Waiting Payment Indicator */}
-            {isWaitingPay && (
-               <div className="absolute top-4 left-4 text-blue-600 bg-white p-1 rounded-full shadow-sm">
-                  <DollarSign size={20} />
-               </div>
-            )}
-          </button>
-        )})}
+              {isDelivery && (
+                  <div className="absolute top-2 left-2 opacity-20">
+                      <Truck size={32} />
+                  </div>
+              )}
+
+              <div className="text-5xl font-heading font-bold mb-1">{table.number}</div>
+              <div className={`text-sm font-bold uppercase mb-2 ${table.status === TableStatus.AVAILABLE ? 'text-green-600' : isWaitingPay ? 'text-blue-600' : 'text-red-600'}`}>
+                  {getTableStatusText(table)}
+              </div>
+              
+              {!isDelivery && (
+                <div className="flex items-center gap-1.5 text-sm font-medium opacity-60 bg-white/50 px-3 py-1 rounded-full">
+                  <Users size={16} /> {table.capacity}
+                </div>
+              )}
+              
+              {/* Status Dot */}
+              <div className={`absolute top-4 right-4 w-4 h-4 rounded-full ${table.status === TableStatus.AVAILABLE ? 'bg-green-500' : isWaitingPay ? 'bg-blue-500 animate-bounce' : 'bg-red-500'} ring-4 ring-white`}></div>
+              
+              {/* Waiting Payment Indicator */}
+              {isWaitingPay && (
+                 <div className="absolute top-4 left-4 text-blue-600 bg-white p-1 rounded-full shadow-sm">
+                    <DollarSign size={20} />
+                 </div>
+              )}
+            </button>
+          )})}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -204,6 +219,7 @@ export const FloorPlan: React.FC = () => {
         <div className="relative z-10">
           {renderFloorSection('GROUND', 'ชั้นล่าง (Ground Floor)')}
           {renderFloorSection('UPPER', 'ชั้นบน (Upper Floor)')}
+          {renderFloorSection('DELIVERY', 'โซนเดลิเวอรี่ (Delivery)')}
         </div>
       </div>
 

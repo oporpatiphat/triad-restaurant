@@ -1,3 +1,5 @@
+
+
 import { Ingredient, MenuItem, Role, Table, TableStatus, User } from "./types";
 
 export const MOCK_USERS: User[] = [
@@ -205,6 +207,16 @@ export const generateTables = (): Table[] => {
       floor: 'UPPER',
       status: TableStatus.AVAILABLE,
       capacity: 6
+    });
+  }
+  // NEW: Delivery Zone: D1-D2 (2 tables)
+  for (let i = 1; i <= 2; i++) {
+    tables.push({
+      id: `d${i}`,
+      number: `D${i}`,
+      floor: 'DELIVERY',
+      status: TableStatus.AVAILABLE,
+      capacity: 0 // Delivery "tables" don't really have capacity
     });
   }
   return tables;

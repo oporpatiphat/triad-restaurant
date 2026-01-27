@@ -1,15 +1,27 @@
 
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
-import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag } from 'lucide-react';
+import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
 
-const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables }: any) => {
+const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, menu }: any) => {
     
     // Permission: Owner, Staff, Chef can act
     const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
     const isRestricted = !canAct;
+
+    const [expandedRecipes, setExpandedRecipes] = useState<Set<string>>(new Set());
+
+    const toggleRecipe = (itemId: string) => {
+        const next = new Set(expandedRecipes);
+        if (next.has(itemId)) {
+            next.delete(itemId);
+        } else {
+            next.add(itemId);
+        }
+        setExpandedRecipes(next);
+    }
 
     const getTableNumber = (tableId: string) => {
         if (!tables) return '??';
@@ -70,24 +82,49 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                    )}
                </div>
 
-               <div className="space-y-1 mb-4 border-t border-b border-stone-100 py-2">
+               <div className="space-y-3 mb-4 border-t border-b border-stone-100 py-3">
                  {order.items.map((item, idx) => {
                    const isCookingPhase = order.status === OrderStatus.COOKING;
+                   const uniqueKey = `${order.id}-${idx}`;
+                   const menuItem = menu?.find((m: any) => m.id === item.menuItemId);
+                   const isExpanded = expandedRecipes.has(uniqueKey);
                    
                    return (
-                   <div key={idx} className={`flex items-start gap-2 text-sm ${item.isCooked ? 'opacity-50' : 'text-stone-700'}`}>
-                     {isCookingPhase && !isRestricted ? (
-                         <button onClick={() => toggleItemCookedStatus(order.id, idx)} className="mt-0.5 text-stone-400 hover:text-green-600">
-                             {item.isCooked ? <CheckSquare size={16} className="text-green-600"/> : <Square size={16}/>}
-                         </button>
-                     ) : (
-                         <span className="font-bold text-stone-900 mt-0.5">x{item.quantity}</span>
-                     )}
-                     
-                     <span className={item.isCooked ? 'line-through decoration-stone-400' : ''}>
-                        {isCookingPhase && !isRestricted && <span className="font-bold mr-1">x{item.quantity}</span>}
-                        {item.name}
-                     </span>
+                   <div key={idx}>
+                       <div className={`flex items-start gap-2 text-sm ${item.isCooked ? 'opacity-50' : 'text-stone-700'}`}>
+                         {isCookingPhase && !isRestricted ? (
+                             <button onClick={() => toggleItemCookedStatus(order.id, idx)} className="mt-0.5 text-stone-400 hover:text-green-600">
+                                 {item.isCooked ? <CheckSquare size={16} className="text-green-600"/> : <Square size={16}/>}
+                             </button>
+                         ) : (
+                             <span className="font-bold text-stone-900 mt-0.5">x{item.quantity}</span>
+                         )}
+                         
+                         <div className="flex-1">
+                             <div className={`flex items-center justify-between ${item.isCooked ? 'line-through decoration-stone-400' : ''}`}>
+                                <span>
+                                    {isCookingPhase && !isRestricted && <span className="font-bold mr-1">x{item.quantity}</span>}
+                                    {item.name}
+                                </span>
+                                {menuItem && menuItem.ingredients && menuItem.ingredients.length > 0 && (
+                                    <button 
+                                        onClick={() => toggleRecipe(uniqueKey)}
+                                        className="text-stone-400 hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors"
+                                    >
+                                        {isExpanded ? <ChevronUp size={14} /> : <BookOpen size={14} />}
+                                    </button>
+                                )}
+                             </div>
+                             
+                             {/* Ingredients Detail */}
+                             {isExpanded && menuItem && menuItem.ingredients && (
+                                 <div className="mt-1 pl-2 border-l-2 border-red-200 text-xs text-stone-500">
+                                     <span className="font-bold text-stone-400">วัตถุดิบ: </span>
+                                     {menuItem.ingredients.join(', ')}
+                                 </div>
+                             )}
+                         </div>
+                       </div>
                    </div>
                  )})}
                </div>
@@ -126,7 +163,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
 };
 
 export const KitchenView: React.FC = () => {
-  const { orders, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, currentUser } = useStore();
+  const { orders, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, currentUser, menu } = useStore();
   
   // Safe filtering: Ensure orders is an array before filtering
   const safeOrders = Array.isArray(orders) ? orders : [];
@@ -171,6 +208,7 @@ export const KitchenView: React.FC = () => {
           updateOrderStatus={updateOrderStatus}
           cancelOrder={cancelOrder}
           tables={tables}
+          menu={menu}
         />
         <KanbanColumn 
           title="กำลังทำ (Cooking)" 
@@ -184,6 +222,7 @@ export const KitchenView: React.FC = () => {
           toggleItemCookedStatus={toggleItemCookedStatus}
           cancelOrder={cancelOrder}
           tables={tables}
+          menu={menu}
         />
         <KanbanColumn 
           title="รอเสิร์ฟ (Serving)" 
@@ -196,6 +235,7 @@ export const KitchenView: React.FC = () => {
           updateOrderStatus={updateOrderStatus}
           cancelOrder={cancelOrder}
           tables={tables}
+          menu={menu}
         />
       </div>
     </div>
