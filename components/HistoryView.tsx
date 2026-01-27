@@ -6,7 +6,7 @@ import { History, Eye, Receipt, CreditCard, Banknote, X, Calendar, User, MapPin,
 import { Order, SessionRecord } from '../types';
 
 export const HistoryView: React.FC = () => {
-  const { sessionHistory, orders, tables, deleteOrder, currentUser } = useStore();
+  const { sessionHistory, orders, tables, deleteOrder, deleteSession, currentUser } = useStore();
   const [selectedSession, setSelectedSession] = useState<SessionRecord | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
@@ -42,8 +42,14 @@ export const HistoryView: React.FC = () => {
      }
   };
 
+  const handleDeleteSession = (sessionId: string) => {
+      if (confirm("คำเตือน: คุณต้องการลบประวัติการเปิดร้านรอบนี้ใช่หรือไม่? ข้อมูลสรุปยอดขายจะหายไปถาวร")) {
+          deleteSession(sessionId);
+      }
+  }
+
   // RESTRICT DELETE TO SUMALIN ONLY
-  const canDelete = currentUser?.username === 'sumalin';
+  const isAdmin = currentUser?.username === 'sumalin';
 
   // VIEW 1: Session History List
   const renderSessionList = () => (
@@ -59,7 +65,7 @@ export const HistoryView: React.FC = () => {
                 <th className="p-4 font-bold text-stone-600 text-center">จำนวนออเดอร์</th>
                 <th className="p-4 font-bold text-stone-600 text-right">ยอดขายรวม</th>
                 <th className="p-4 font-bold text-stone-600 text-center">สถานะ</th>
-                <th className="p-4 font-bold text-stone-600 text-center">ดูข้อมูล</th>
+                <th className="p-4 font-bold text-stone-600 text-center">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 text-sm">
@@ -95,12 +101,24 @@ export const HistoryView: React.FC = () => {
                      )}
                   </td>
                   <td className="p-4 text-center">
-                      <button 
-                        onClick={() => setSelectedSession(session)}
-                        className="p-2 hover:bg-stone-200 text-stone-500 rounded-lg transition-colors"
-                      >
-                         <Eye size={18} />
-                      </button>
+                      <div className="flex justify-center gap-2">
+                          <button 
+                            onClick={() => setSelectedSession(session)}
+                            className="p-2 hover:bg-stone-200 text-stone-500 rounded-lg transition-colors"
+                            title="ดูรายละเอียด"
+                          >
+                             <Eye size={18} />
+                          </button>
+                          {isAdmin && session.closedAt && (
+                              <button 
+                                onClick={() => handleDeleteSession(session.id)}
+                                className="p-2 hover:bg-red-50 text-stone-300 hover:text-red-600 rounded-lg transition-colors"
+                                title="ลบประวัติ"
+                              >
+                                 <Trash2 size={18} />
+                              </button>
+                          )}
+                      </div>
                   </td>
                 </tr>
               ))}
@@ -200,7 +218,7 @@ export const HistoryView: React.FC = () => {
                             >
                                 <Eye size={18} />
                             </button>
-                            {canDelete && (
+                            {isAdmin && (
                                 <button 
                                     onClick={() => handleDelete(o.id)}
                                     className="p-2 hover:bg-red-50 text-stone-300 hover:text-red-600 rounded-lg transition-colors"

@@ -12,6 +12,7 @@ interface StoreContextType {
   logout: () => void;
   storeSession: StoreSession;
   sessionHistory: SessionRecord[];
+  deleteSession: (sessionId: string) => void; // New
   openStore: (dailyMenuUpdates: MenuItem[], openerName: string) => void;
   closeStore: (closerName: string) => void;
   tables: Table[];
@@ -19,12 +20,12 @@ interface StoreContextType {
   orders: Order[];
   createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, bagCount: number) => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
-  toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; // New
-  cancelOrder: (orderId: string, reason?: string) => void; // New
+  toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; 
+  cancelOrder: (orderId: string, reason?: string) => void; 
   deleteOrder: (orderId: string) => void; 
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
-  updateMenuItem: (item: MenuItem) => void; // Added
+  updateMenuItem: (item: MenuItem) => void;
   deleteMenuItem: (itemId: string) => void;
   toggleMenuAvailability: (itemId: string) => void;
   updateMenuStock: (itemId: string, quantity: number) => void;
@@ -116,7 +117,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const saved = localStorage.getItem(KEYS.TABLES);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+            // Fix: Check if Delivery tables exist, if not append them (Self-healing for older saves)
+            const hasDelivery = parsed.some((t: any) => t.floor === 'DELIVERY');
+            if (!hasDelivery) {
+                const generated = generateTables();
+                const deliveryTables = generated.filter(t => t.floor === 'DELIVERY');
+                return [...parsed, ...deliveryTables];
+            }
+            return parsed;
+        }
       }
     } catch(e) {}
     return generateTables();
@@ -194,7 +204,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           if (tablesSnap.empty) {
               generateTables().forEach(t => batch.set(doc(db!, 'tables', t.id), t));
               hasUpdates = true;
+          } else {
+              // Check for missing delivery tables in cloud
+              const existingIds = tablesSnap.docs.map(d => d.id);
+              const allTables = generateTables();
+              allTables.forEach(t => {
+                  if (!existingIds.includes(t.id)) {
+                      batch.set(doc(db!, 'tables', t.id), t);
+                      hasUpdates = true;
+                  }
+              });
           }
+
           const menuSnap = await getDocs(collection(db!, 'menu'));
           if (menuSnap.empty) {
               ENHANCED_INITIAL_MENU.forEach(m => batch.set(doc(db!, 'menu', m.id), m));
@@ -410,6 +431,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
 
         saveToStorage(KEYS.SESSION, newSession);
+    }
+  };
+
+  const deleteSession = async (sessionId: string) => {
+    if (isCloudMode && db) {
+        await deleteDoc(doc(db!, 'sessions', sessionId));
+    } else {
+        setSessionHistory(prev => {
+            const next = prev.filter(s => s.id !== sessionId);
+            saveToStorage(KEYS.SESSIONS_HISTORY, next);
+            return next;
+        });
     }
   };
 
@@ -1025,7 +1058,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   return (
     <StoreContext.Provider value={{
       currentUser, login, logout,
-      storeSession, sessionHistory, openStore, closeStore,
+      storeSession, sessionHistory, deleteSession, openStore, closeStore,
       tables, updateTableStatus,
       orders, createOrder, updateOrderStatus, toggleItemCookedStatus, cancelOrder, deleteOrder,
       menu, addMenuItem, updateMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,
