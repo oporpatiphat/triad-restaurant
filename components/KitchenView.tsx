@@ -5,7 +5,7 @@ import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
 import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, ChevronUp, ChevronDown, List } from 'lucide-react';
 
-const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, menu }: any) => {
+const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, menu, inventory }: any) => {
     
     // Permission: Owner, Staff, Chef can act
     const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
@@ -24,7 +24,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
         setExpandedIngredients(next);
     }
 
-    // NEW: Aggregate ingredients for the whole order
+    // NEW: Aggregate ingredients for the whole order with Categories
     const getAggregatedIngredients = (order: Order) => {
         const ingredientMap = new Map<string, number>();
         
@@ -38,7 +38,17 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
             }
         });
         
-        return Array.from(ingredientMap.entries()).map(([name, qty]) => ({ name, qty }));
+        // Enrich with category from inventory
+        const enriched = Array.from(ingredientMap.entries()).map(([name, qty]) => {
+            const invItem = inventory.find((i: any) => i.name === name);
+            return {
+                name,
+                qty,
+                category: invItem ? invItem.category : 'ของแห้ง/อื่นๆ'
+            };
+        });
+
+        return enriched;
     };
 
     const getTableNumber = (tableId: string) => {
@@ -104,7 +114,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                    )}
                </div>
 
-               {/* NEW: Total Ingredients Toggle */}
+               {/* NEW: Total Ingredients Toggle (Categorized) */}
                {aggregatedIngredients.length > 0 && (
                    <div className="mb-3">
                        <button 
@@ -116,14 +126,29 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                        </button>
                        {isIngredientsExpanded && (
                            <div className="mt-1 p-3 bg-stone-100 rounded-lg text-xs border border-stone-200 animate-in fade-in zoom-in-95 duration-200">
-                               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                                   {aggregatedIngredients.map(({name, qty}, i) => (
-                                       <div key={i} className="flex justify-between border-b border-stone-200/50 pb-0.5 last:border-0">
-                                           <span className="text-stone-600">{name}</span>
-                                           <span className="font-bold text-stone-800">x{qty}</span>
+                               {['เนื้อสัตว์', 'ผัก', 'ไวน์', 'ของแห้ง/อื่นๆ'].map(cat => {
+                                   const catItems = aggregatedIngredients.filter(i => i.category === cat || (cat === 'ของแห้ง/อื่นๆ' && !['เนื้อสัตว์', 'ผัก', 'ไวน์'].includes(i.category)));
+                                   if (catItems.length === 0) return null;
+                                   
+                                   let headerColor = 'text-stone-500';
+                                   if (cat === 'เนื้อสัตว์') headerColor = 'text-red-600';
+                                   if (cat === 'ผัก') headerColor = 'text-green-600';
+                                   if (cat === 'ไวน์') headerColor = 'text-purple-600';
+
+                                   return (
+                                       <div key={cat} className="mb-2 last:mb-0">
+                                           <div className={`font-bold ${headerColor} mb-1 border-b border-stone-200 pb-0.5`}>{cat}</div>
+                                           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                                {catItems.map(({name, qty}, i) => (
+                                                    <div key={i} className="flex justify-between">
+                                                        <span className="text-stone-600">{name}</span>
+                                                        <span className="font-bold text-stone-800">x{qty}</span>
+                                                    </div>
+                                                ))}
+                                           </div>
                                        </div>
-                                   ))}
-                               </div>
+                                   );
+                               })}
                            </div>
                        )}
                    </div>
@@ -191,7 +216,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
 };
 
 export const KitchenView: React.FC = () => {
-  const { orders, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, currentUser, menu } = useStore();
+  const { orders, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, currentUser, menu, inventory } = useStore();
   
   // Safe filtering: Ensure orders is an array before filtering
   const safeOrders = Array.isArray(orders) ? orders : [];
@@ -237,6 +262,7 @@ export const KitchenView: React.FC = () => {
           cancelOrder={cancelOrder}
           tables={tables}
           menu={menu}
+          inventory={inventory}
         />
         <KanbanColumn 
           title="กำลังทำ (Cooking)" 
@@ -251,6 +277,7 @@ export const KitchenView: React.FC = () => {
           cancelOrder={cancelOrder}
           tables={tables}
           menu={menu}
+          inventory={inventory}
         />
         <KanbanColumn 
           title="รอเสิร์ฟ (Serving)" 
@@ -264,6 +291,7 @@ export const KitchenView: React.FC = () => {
           cancelOrder={cancelOrder}
           tables={tables}
           menu={menu}
+          inventory={inventory}
         />
       </div>
     </div>

@@ -24,6 +24,7 @@ interface StoreContextType {
   deleteOrder: (orderId: string) => void; 
   menu: MenuItem[];
   addMenuItem: (item: MenuItem) => void;
+  updateMenuItem: (item: MenuItem) => void; // Added
   deleteMenuItem: (itemId: string) => void;
   toggleMenuAvailability: (itemId: string) => void;
   updateMenuStock: (itemId: string, quantity: number) => void;
@@ -830,6 +831,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     }
   };
+
+  const updateMenuItem = async (item: MenuItem) => {
+    if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), item);
+    else {
+        setMenu(prev => {
+            const next = prev.map(m => m.id === item.id ? item : m);
+            saveToStorage(KEYS.MENU, next);
+            return next;
+        });
+    }
+  };
   
   const deleteMenuItem = async (itemId: string) => {
     if (isCloudMode && db) {
@@ -979,7 +991,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       storeSession, sessionHistory, openStore, closeStore,
       tables, updateTableStatus,
       orders, createOrder, updateOrderStatus, toggleItemCookedStatus, cancelOrder, deleteOrder,
-      menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,
+      menu, addMenuItem, updateMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,
       inventory, updateIngredientQuantity, addIngredient, removeIngredient,
       staffList, addStaff, updateStaff, terminateStaff, deleteStaff,
       availablePositions, addPosition, removePosition, movePosition,

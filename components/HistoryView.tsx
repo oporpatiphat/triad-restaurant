@@ -42,7 +42,8 @@ export const HistoryView: React.FC = () => {
      }
   };
 
-  const canDelete = currentUser?.role === Role.OWNER;
+  // RESTRICT DELETE TO SUMALIN ONLY
+  const canDelete = currentUser?.username === 'sumalin';
 
   // VIEW 1: Session History List
   const renderSessionList = () => (
@@ -203,6 +204,7 @@ export const HistoryView: React.FC = () => {
                                 <button 
                                     onClick={() => handleDelete(o.id)}
                                     className="p-2 hover:bg-red-50 text-stone-300 hover:text-red-600 rounded-lg transition-colors"
+                                    title="ลบโดยแอดมิน"
                                 >
                                     <Trash2 size={18} />
                                 </button>

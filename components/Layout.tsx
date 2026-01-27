@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
@@ -66,46 +68,107 @@ export const Layout: React.FC = () => {
   };
 
   // Helper to calculate max portions based on inventory
+  // IMPROVED: Logic for "Smart Average" (Fair Share)
   const getMaxPossibleStock = (item: MenuItem) => {
     if (!item.ingredients || item.ingredients.length === 0) return 999;
     
-    let maxPortions = 9999;
+    let limitingFactor = 9999;
     
     item.ingredients.forEach(ingName => {
         const invItem = inventory.find(i => i.name === ingName);
         if (invItem) {
-            if (invItem.quantity < maxPortions) maxPortions = invItem.quantity;
+            // How many active menus share this ingredient?
+            // (Include current item in count if it's marked available, or if we are actively configuring it)
+            // Note: In this modal logic, we use dailyMenu state.
+            const sharedCount = dailyMenu.filter(m => 
+                m.isAvailable && m.ingredients.includes(ingName)
+            ).length;
+
+            // If this item is not yet enabled but we are asking "what if", treat count as at least 1 (itself)
+            // But if it IS enabled, it's already in the count.
+            // Safe divisor: max(1, count)
+            
+            // To be fair, if there are 3 active items using Chicken, and Total Chicken is 30.
+            // Each gets 10.
+            
+            const divisor = Math.max(1, sharedCount);
+            const limitForThisIngredient = Math.floor(invItem.quantity / divisor);
+            
+            if (limitForThisIngredient < limitingFactor) {
+                limitingFactor = limitForThisIngredient;
+            }
         } else {
             // Missing ingredient entirely
-            maxPortions = 0;
+            limitingFactor = 0;
         }
     });
 
-    return maxPortions;
+    return limitingFactor;
   };
 
   const updateStockQuantity = (id: string, delta: number) => {
-    setDailyMenu(prev => prev.map(item => {
-        if (item.id !== id) return item;
+    setDailyMenu(prev => {
+        // We need to calculate based on the PREVIOUS state because availability changes affect max possible
+        const targetItem = prev.find(i => i.id === id);
+        if(!targetItem) return prev;
+
+        // Temporarily imagine the state to check limits?
+        // Actually, just apply delta.
         
-        const maxPossible = getMaxPossibleStock(item);
-        const currentStock = item.dailyStock === -1 ? 0 : item.dailyStock;
-        let newStock = currentStock + delta;
+        // However, "MaxPossible" depends on *other* available items.
+        // For simple +/- buttons, we just check against the *current calculated max* for this item.
+        // But MaxPossible changes dynamically as we toggle other items.
         
-        // Validation Logic
-        if (newStock < 0) newStock = 0;
+        // Re-calculate max for this item given current state of others
         
-        // If trying to increase beyond inventory limits
-        if (delta > 0 && newStock > maxPossible) {
-           // We can either clamp it or allow it with warning. 
-           // User request implies "syncing", so let's clamp it to prevent over-promising.
-           newStock = maxPossible; 
-        }
+        // This helper needs access to the 'prev' array to be accurate, 
+        // but getMaxPossibleStock uses 'dailyMenu' state which might be stale inside setState callback?
+        // No, 'dailyMenu' in the outer scope is the *previous render* state.
+        // Inside setDailyMenu(prev => ...), 'prev' is the most current pending state.
+        // We should move logic inside or pass 'prev' to helper.
         
-        const newAvailability = newStock > 0;
+        // Simplified approach: Just calc based on current item and clamp.
+        // The UI will update Max on re-render.
         
-        return { ...item, dailyStock: newStock, isAvailable: newAvailability };
-    }));
+        // To properly check max inside here, we need to know the shared count from 'prev'.
+        
+        const nextState = prev.map(item => {
+           if (item.id !== id) return item;
+
+           let currentMax = 9999;
+           // Inline calculation using 'prev' state
+           if (item.ingredients && item.ingredients.length > 0) {
+              item.ingredients.forEach(ingName => {
+                 const invItem = inventory.find(i => i.name === ingName);
+                 if(invItem) {
+                    const sharedCount = prev.filter(m => m.isAvailable && m.ingredients.includes(ingName)).length;
+                    // If current item is NOT available, but we are adding stock (implying we want to enable it),
+                    // effectively the shared count increases by 1 for calculation?
+                    // Let's rely on the user toggling "Available" first usually.
+                    // But if they press "+" on an unavailable item, it becomes available.
+                    
+                    const effectiveCount = item.isAvailable ? sharedCount : sharedCount + 1;
+                    const limit = Math.floor(invItem.quantity / effectiveCount);
+                    if(limit < currentMax) currentMax = limit;
+                 } else {
+                    currentMax = 0;
+                 }
+              });
+           } else {
+              currentMax = 999;
+           }
+
+           const currentStock = item.dailyStock === -1 ? 0 : item.dailyStock;
+           let newStock = currentStock + delta;
+           if (newStock < 0) newStock = 0;
+           if (delta > 0 && newStock > currentMax) newStock = currentMax;
+           
+           const newAvailability = newStock > 0;
+           return { ...item, dailyStock: newStock, isAvailable: newAvailability };
+        });
+        
+        return nextState;
+    });
   };
 
   // Define Menus with custom permission checks
@@ -273,7 +336,7 @@ export const Layout: React.FC = () => {
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                   <Coffee /> ตั้งค่าเมนูประจำวัน
                 </h2>
-                <p className="text-red-200 text-sm mt-1">ระบบจะคำนวณจำนวนที่ขายได้สูงสุดจากสต็อกวัตถุดิบ (Max Possible)</p>
+                <p className="text-red-200 text-sm mt-1">ระบบจะคำนวณเฉลี่ยกับเมนูอื่นที่ใช้ร่วมกัน (Smart Max)</p>
               </div>
               <button onClick={() => setShowOpenModal(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors">
                 <X />
@@ -343,7 +406,7 @@ export const Layout: React.FC = () => {
                                     {isStockLow && <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1 rounded">(วัตถุดิบต่ำ)</span>}
                                  </span>
                                  <span className="text-xs text-stone-400 whitespace-nowrap font-bold">
-                                   Max: {maxPossible}
+                                   Smart Limit: {maxPossible}
                                  </span>
                               </div>
                               
@@ -391,7 +454,7 @@ export const Layout: React.FC = () => {
                                         }
                                     }}
                                     className={`h-10 px-2 flex items-center justify-center gap-1 rounded-lg border transition-colors shadow-sm font-bold text-[10px] ${item.dailyStock === maxPossible ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-stone-300 text-stone-500 hover:bg-stone-50'}`}
-                                    title="Set to Max possible"
+                                    title="Set to Smart Limit"
                                   >
                                     <ArrowUpToLine size={14} /> MAX
                                   </button>

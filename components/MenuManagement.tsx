@@ -1,11 +1,14 @@
+
+
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2 } from 'lucide-react';
+import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2, Edit } from 'lucide-react';
 import { MenuItem } from '../types';
 
 export const MenuManagement: React.FC = () => {
-  const { menu, addMenuItem, deleteMenuItem, toggleMenuAvailability, inventory } = useStore();
+  const { menu, addMenuItem, updateMenuItem, deleteMenuItem, toggleMenuAvailability, inventory } = useStore();
   const [showForm, setShowForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({
     name: '',
     description: '',
@@ -16,22 +19,46 @@ export const MenuManagement: React.FC = () => {
     isAvailable: true
   });
 
+  const handleEdit = (item: MenuItem) => {
+    setNewItem(item);
+    setIsEditing(true);
+    setShowForm(true);
+  };
+
+  const handleCreate = () => {
+    setNewItem({ 
+      name: '', 
+      description: '', 
+      price: 0, 
+      cost: 0, 
+      category: 'Main Dish', 
+      isAvailable: true, 
+      ingredients: [] 
+    });
+    setIsEditing(false);
+    setShowForm(true);
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newItem.name && newItem.price) {
-      addMenuItem({
-        id: `m-${Date.now()}`,
-        name: newItem.name,
-        description: newItem.description || '',
-        price: Number(newItem.price),
-        cost: 0, 
-        category: newItem.category || 'Main Dish',
-        ingredients: newItem.ingredients || [],
-        isAvailable: true,
-        dailyStock: -1
-      });
+      if (isEditing && newItem.id) {
+        updateMenuItem(newItem as MenuItem);
+      } else {
+        addMenuItem({
+          id: `m-${Date.now()}`,
+          name: newItem.name,
+          description: newItem.description || '',
+          price: Number(newItem.price),
+          cost: 0, 
+          category: newItem.category || 'Main Dish',
+          ingredients: newItem.ingredients || [],
+          isAvailable: true,
+          dailyStock: -1
+        });
+      }
       setShowForm(false);
-      setNewItem({ name: '', description: '', price: 0, cost: 0, category: 'Main Dish', isAvailable: true, ingredients: [] });
+      setIsEditing(false);
     }
   };
 
@@ -61,6 +88,14 @@ export const MenuManagement: React.FC = () => {
     }
   };
 
+  // Group inventory for selection
+  const ingredientGroups = {
+      'เนื้อสัตว์': inventory.filter(i => i.category === 'เนื้อสัตว์'),
+      'ผัก': inventory.filter(i => i.category === 'ผัก'),
+      'ไวน์': inventory.filter(i => i.category === 'ไวน์'),
+      'ของแห้ง/อื่นๆ': inventory.filter(i => i.category !== 'เนื้อสัตว์' && i.category !== 'ผัก' && i.category !== 'ไวน์')
+  };
+
   return (
     <div className="h-full">
       <div className="flex justify-between items-center mb-6">
@@ -71,7 +106,7 @@ export const MenuManagement: React.FC = () => {
           <p className="text-stone-500 text-sm mt-1">เพิ่มลบแก้ไขรายการอาหารและราคา</p>
         </div>
         <button 
-          onClick={() => setShowForm(true)}
+          onClick={handleCreate}
           className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-red-600/20 transition-all active:scale-95"
         >
           <Plus size={20} /> เพิ่มเมนูใหม่
@@ -85,7 +120,8 @@ export const MenuManagement: React.FC = () => {
             <div className="bg-red-900 p-5 text-white flex justify-between items-center shrink-0">
               <div>
                 <h3 className="font-bold text-xl flex items-center gap-2">
-                  <Plus size={24} className="text-amber-400" /> เพิ่มรายการอาหารใหม่
+                  {isEditing ? <Edit size={24} className="text-amber-400" /> : <Plus size={24} className="text-amber-400" />} 
+                  {isEditing ? 'แก้ไขเมนู' : 'เพิ่มรายการอาหารใหม่'}
                 </h3>
                 <p className="text-red-200 text-sm mt-0.5">กรอกข้อมูลเมนูเพื่อนำขึ้นขายหน้าร้าน</p>
               </div>
@@ -167,37 +203,42 @@ export const MenuManagement: React.FC = () => {
                     <label className="block text-sm font-bold text-stone-700 mb-2 flex items-center gap-1">
                        <CheckSquare size={14} className="text-red-500" /> เลือกวัตถุดิบที่ใช้ (Ingredients)
                     </label>
-                    <div className="p-4 border border-stone-200 rounded-xl bg-stone-50/50 max-h-48 overflow-y-auto">
+                    <div className="p-4 border border-stone-200 rounded-xl bg-stone-50/50 max-h-60 overflow-y-auto space-y-4">
                        {inventory.length === 0 ? (
                          <div className="text-center text-stone-400 text-sm py-4">ไม่มีข้อมูลวัตถุดิบในคลัง</div>
                        ) : (
-                         <div className="grid grid-cols-2 gap-3">
-                           {inventory.map(ing => {
-                             const isSelected = newItem.ingredients?.includes(ing.name);
-                             return (
-                               <label 
-                                 key={ing.id} 
-                                 className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-all ${isSelected ? 'bg-red-50 border-red-200 shadow-sm' : 'bg-white border-transparent hover:bg-stone-100'}`}
-                               >
-                                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-stone-300'}`}>
-                                      {isSelected && <CheckSquare size={12} />}
-                                  </div>
-                                  <input 
-                                    type="checkbox"
-                                    className="hidden"
-                                    checked={isSelected}
-                                    onChange={() => handleIngredientToggle(ing.name)}
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                      <div className={`text-sm ${isSelected ? 'font-bold text-red-700' : 'text-stone-600'}`}>{ing.name}</div>
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded border inline-block mt-0.5 ${getCategoryColor(ing.category)}`}>
-                                         {ing.category}
-                                      </span>
-                                  </div>
-                               </label>
-                             );
-                           })}
-                         </div>
+                         Object.entries(ingredientGroups).map(([groupName, items]) => items.length > 0 && (
+                            <div key={groupName}>
+                                <h4 className="font-bold text-stone-600 text-xs uppercase mb-2 border-b border-stone-200 pb-1">{groupName}</h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                {items.map(ing => {
+                                    const isSelected = newItem.ingredients?.includes(ing.name);
+                                    return (
+                                    <label 
+                                        key={ing.id} 
+                                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer border transition-all ${isSelected ? 'bg-red-50 border-red-200 shadow-sm' : 'bg-white border-transparent hover:bg-stone-100'}`}
+                                    >
+                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-stone-300'}`}>
+                                            {isSelected && <CheckSquare size={12} />}
+                                        </div>
+                                        <input 
+                                            type="checkbox"
+                                            className="hidden"
+                                            checked={isSelected}
+                                            onChange={() => handleIngredientToggle(ing.name)}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                            <div className={`text-sm ${isSelected ? 'font-bold text-red-700' : 'text-stone-600'}`}>{ing.name}</div>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded border inline-block mt-0.5 ${getCategoryColor(ing.category)}`}>
+                                                {ing.category}
+                                            </span>
+                                        </div>
+                                    </label>
+                                    );
+                                })}
+                                </div>
+                            </div>
+                         ))
                        )}
                     </div>
                     <div className="text-xs text-stone-500 mt-2 flex items-center gap-1">
@@ -223,7 +264,8 @@ export const MenuManagement: React.FC = () => {
                 onClick={handleSubmit} 
                 className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-600/20 transition-all active:scale-95 flex items-center gap-2"
               >
-                <Plus size={18} /> บันทึกเมนู
+                {isEditing ? <Edit size={18} /> : <Plus size={18} />} 
+                {isEditing ? 'บันทึกการแก้ไข' : 'บันทึกเมนู'}
               </button>
             </div>
           </div>
@@ -244,14 +286,23 @@ export const MenuManagement: React.FC = () => {
                         {items.map(item => (
                         <div key={item.id} className={`bg-white p-5 rounded-2xl shadow-sm border transition-all hover:shadow-md group relative ${item.isAvailable ? 'border-stone-200' : 'border-stone-200 bg-stone-50 opacity-80'}`}>
                             
-                            {/* Delete Button (Visible on Hover) */}
-                            <button 
-                                onClick={() => handleDelete(item)}
-                                className="absolute -top-2 -right-2 bg-white text-stone-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full shadow-sm border border-stone-200 opacity-0 group-hover:opacity-100 transition-all z-10"
-                                title="ลบเมนู"
-                            >
-                                <Trash2 size={16} />
-                            </button>
+                            {/* Action Buttons (Visible on Hover) */}
+                            <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all z-10">
+                                <button 
+                                    onClick={() => handleEdit(item)}
+                                    className="bg-white text-stone-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-full shadow-sm border border-stone-200"
+                                    title="แก้ไขเมนู"
+                                >
+                                    <Edit size={16} />
+                                </button>
+                                <button 
+                                    onClick={() => handleDelete(item)}
+                                    className="bg-white text-stone-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full shadow-sm border border-stone-200"
+                                    title="ลบเมนู"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
 
                             <div className="flex justify-between items-start mb-3">
                                 <h3 className={`font-bold text-lg line-clamp-1 ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`}>{item.name}</h3>
