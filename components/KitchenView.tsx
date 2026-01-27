@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role } from '../types';
-import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, BookOpen, ChevronUp } from 'lucide-react';
+import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, ChevronUp, ChevronDown, List } from 'lucide-react';
 
 const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, menu }: any) => {
     
@@ -11,17 +11,35 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
     const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
     const isRestricted = !canAct;
 
-    const [expandedRecipes, setExpandedRecipes] = useState<Set<string>>(new Set());
+    // CHANGED: Instead of per-item recipe toggle, we use per-order ingredient toggle
+    const [expandedIngredients, setExpandedIngredients] = useState<Set<string>>(new Set());
 
-    const toggleRecipe = (itemId: string) => {
-        const next = new Set(expandedRecipes);
-        if (next.has(itemId)) {
-            next.delete(itemId);
+    const toggleIngredients = (orderId: string) => {
+        const next = new Set(expandedIngredients);
+        if (next.has(orderId)) {
+            next.delete(orderId);
         } else {
-            next.add(itemId);
+            next.add(orderId);
         }
-        setExpandedRecipes(next);
+        setExpandedIngredients(next);
     }
+
+    // NEW: Aggregate ingredients for the whole order
+    const getAggregatedIngredients = (order: Order) => {
+        const ingredientMap = new Map<string, number>();
+        
+        order.items.forEach(item => {
+            const menuItem = menu?.find((m: any) => m.id === item.menuItemId);
+            if (menuItem && menuItem.ingredients) {
+                menuItem.ingredients.forEach((ing: string) => {
+                    const current = ingredientMap.get(ing) || 0;
+                    ingredientMap.set(ing, current + item.quantity);
+                });
+            }
+        });
+        
+        return Array.from(ingredientMap.entries()).map(([name, qty]) => ({ name, qty }));
+    };
 
     const getTableNumber = (tableId: string) => {
         if (!tables) return '??';
@@ -45,10 +63,14 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
           </div>
         </div>
         <div className={`flex-1 overflow-y-auto p-3 space-y-3 ${isAlert ? 'bg-red-50' : 'bg-stone-50/50'}`}>
-          {items.map((order: Order) => (
+          {items.map((order: Order) => {
+             const aggregatedIngredients = getAggregatedIngredients(order);
+             const isIngredientsExpanded = expandedIngredients.has(order.id);
+
+             return (
             <div key={order.id} className={`bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition-shadow relative group ${isAlert ? 'border-red-200 shadow-red-100' : 'border-stone-200'}`}>
                
-               {/* Cancel Button (Visible on Hover or always visible on mobile) */}
+               {/* Cancel Button */}
                {!isRestricted && (
                    <button 
                      onClick={(e) => { e.stopPropagation(); handleCancel(order.id); }}
@@ -82,12 +104,34 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                    )}
                </div>
 
+               {/* NEW: Total Ingredients Toggle */}
+               {aggregatedIngredients.length > 0 && (
+                   <div className="mb-3">
+                       <button 
+                         onClick={() => toggleIngredients(order.id)}
+                         className="w-full flex items-center justify-between p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-colors"
+                       >
+                           <span className="flex items-center gap-1"><List size={14}/> วัตถุดิบรวม ({aggregatedIngredients.length})</span>
+                           {isIngredientsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                       </button>
+                       {isIngredientsExpanded && (
+                           <div className="mt-1 p-3 bg-stone-100 rounded-lg text-xs border border-stone-200 animate-in fade-in zoom-in-95 duration-200">
+                               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                   {aggregatedIngredients.map(({name, qty}, i) => (
+                                       <div key={i} className="flex justify-between border-b border-stone-200/50 pb-0.5 last:border-0">
+                                           <span className="text-stone-600">{name}</span>
+                                           <span className="font-bold text-stone-800">x{qty}</span>
+                                       </div>
+                                   ))}
+                               </div>
+                           </div>
+                       )}
+                   </div>
+               )}
+
                <div className="space-y-3 mb-4 border-t border-b border-stone-100 py-3">
                  {order.items.map((item, idx) => {
                    const isCookingPhase = order.status === OrderStatus.COOKING;
-                   const uniqueKey = `${order.id}-${idx}`;
-                   const menuItem = menu?.find((m: any) => m.id === item.menuItemId);
-                   const isExpanded = expandedRecipes.has(uniqueKey);
                    
                    return (
                    <div key={idx}>
@@ -106,23 +150,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                                     {isCookingPhase && !isRestricted && <span className="font-bold mr-1">x{item.quantity}</span>}
                                     {item.name}
                                 </span>
-                                {menuItem && menuItem.ingredients && menuItem.ingredients.length > 0 && (
-                                    <button 
-                                        onClick={() => toggleRecipe(uniqueKey)}
-                                        className="text-stone-400 hover:text-red-500 p-1 rounded-full hover:bg-red-50 transition-colors"
-                                    >
-                                        {isExpanded ? <ChevronUp size={14} /> : <BookOpen size={14} />}
-                                    </button>
-                                )}
                              </div>
-                             
-                             {/* Ingredients Detail */}
-                             {isExpanded && menuItem && menuItem.ingredients && (
-                                 <div className="mt-1 pl-2 border-l-2 border-red-200 text-xs text-stone-500">
-                                     <span className="font-bold text-stone-400">วัตถุดิบ: </span>
-                                     {menuItem.ingredients.join(', ')}
-                                 </div>
-                             )}
                          </div>
                        </div>
                    </div>
@@ -153,7 +181,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                  </button>
                )}
             </div>
-          ))}
+          )})}
           {items.length === 0 && (
              <div className="text-center py-10 text-stone-300 text-sm">ไม่มีรายการ</div>
           )}
