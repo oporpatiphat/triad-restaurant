@@ -3,13 +3,13 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem } from '../types';
-import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package, ShoppingBag, Truck } from 'lucide-react';
+import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package, ShoppingBag, Truck, Edit3 } from 'lucide-react';
 
 export const FloorPlan: React.FC = () => {
-  const { tables, menu, inventory, createOrder, updateOrderStatus, orders } = useStore();
+  const { tables, menu, inventory, createOrder, addItemsToOrder, updateOrderStatus, orders } = useStore();
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   
-  // New Order State
+  // New Order / Add Items State
   const [customerName, setCustomerName] = useState('');
   const [customerClass, setCustomerClass] = useState<CustomerClass>(CustomerClass.MIDDLE);
   const [orderBasket, setOrderBasket] = useState<OrderItem[]>([]);
@@ -17,6 +17,7 @@ export const FloorPlan: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [boxCount, setBoxCount] = useState(0); 
   const [bagCount, setBagCount] = useState(0); 
+  const [tableNote, setTableNote] = useState('');
 
   const availableMenu = menu.filter(m => m.isAvailable && m.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -38,10 +39,18 @@ export const FloorPlan: React.FC = () => {
     setCustomerClass(CustomerClass.MIDDLE);
     setBoxCount(0);
     setBagCount(0);
+    
+    // Pre-fill note if existing order
+    if (table.currentOrderId) {
+        const order = orders.find(o => o.id === table.currentOrderId);
+        setTableNote(order?.note || '');
+    } else {
+        setTableNote('');
+    }
   };
 
   const addToBasket = (item: MenuItem) => {
-    // Basic checks are handled by disable logic, but double check here
+    // Basic checks
     if (item.dailyStock !== -1 && item.dailyStock <= 0) return;
     
     // Check total in basket
@@ -81,28 +90,43 @@ export const FloorPlan: React.FC = () => {
 
   const submitOrder = async () => {
     if (!selectedTable) return;
-    if (orderBasket.length === 0) {
-        alert("กรุณาเลือกรายการอาหาร");
-        return;
-    }
-    if (!customerName) {
-        alert("กรุณาระบุชื่อลูกค้า");
-        return;
-    }
-
-    setIsSubmitting(true);
     
-    // Await the creation process
-    const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, boxCount, bagCount);
-    
-    setIsSubmitting(false);
-
-    if (success) {
-        setSelectedTable(null);
-        setOrderBasket([]);
-        setCustomerName('');
+    // If it's a NEW order, we need items and name
+    if (selectedTable.status === TableStatus.AVAILABLE) {
+        if (orderBasket.length === 0) {
+            alert("กรุณาเลือกรายการอาหาร");
+            return;
+        }
+        if (!customerName) {
+            alert("กรุณาระบุชื่อลูกค้า");
+            return;
+        }
+        setIsSubmitting(true);
+        const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, boxCount, bagCount, tableNote);
+        setIsSubmitting(false);
+        if (success) cleanupAndClose();
+    } else {
+        // If it's an EXISTING order (Adding items)
+        if (orderBasket.length === 0 && !tableNote) {
+             // If nothing added, just close
+             setSelectedTable(null);
+             return;
+        }
+        
+        setIsSubmitting(true);
+        if (currentActiveOrder) {
+            const success = await addItemsToOrder(currentActiveOrder.id, orderBasket, boxCount, bagCount, tableNote);
+            setIsSubmitting(false);
+            if (success) cleanupAndClose();
+        }
     }
-    // If failed, modal stays open, basket stays intact, alert is shown by createOrder
+  };
+
+  const cleanupAndClose = () => {
+      setSelectedTable(null);
+      setOrderBasket([]);
+      setCustomerName('');
+      setTableNote('');
   };
 
   const handleCheckBill = () => {
@@ -113,7 +137,6 @@ export const FloorPlan: React.FC = () => {
 
   const handlePaymentReceived = (method: 'CASH' | 'CARD') => {
     if (currentActiveOrder) {
-      // Remove confirm dialog to fix user experience issues
       updateOrderStatus(currentActiveOrder.id, OrderStatus.COMPLETED, undefined, method);
       setSelectedTable(null);
     }
@@ -228,12 +251,13 @@ export const FloorPlan: React.FC = () => {
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-7xl h-[90vh] rounded-3xl shadow-2xl flex overflow-hidden border border-stone-200">
             
-            {/* LEFT SIDE: Menu Selection (Only if table is available) */}
-            {selectedTable.status === TableStatus.AVAILABLE ? (
-            <div className="flex-1 p-8 overflow-y-auto bg-stone-50">
+            {/* LEFT SIDE: Menu Selection (Always visible now to allow adding items) */}
+            <div className="flex-1 p-8 overflow-y-auto bg-stone-50 border-r border-stone-200">
               <div className="flex justify-between items-center mb-6">
                 <div>
-                  <h3 className="text-2xl font-bold text-stone-800 font-heading">เมนูอาหารที่เปิดขาย</h3>
+                  <h3 className="text-2xl font-bold text-stone-800 font-heading">
+                      {selectedTable.status === TableStatus.AVAILABLE ? 'เปิดโต๊ะ / สั่งอาหาร' : 'สั่งอาหารเพิ่ม (Add Items)'}
+                  </h3>
                   <p className="text-stone-500 text-sm">เลือกรายการเพื่อเพิ่มลงในออเดอร์</p>
                 </div>
                 <div className="relative w-64">
@@ -267,8 +291,6 @@ export const FloorPlan: React.FC = () => {
                         // Check Physical Inventory
                         const hasIngredients = item.ingredients.every(ingName => {
                            const stockItem = inventory.find(i => i.name === ingName);
-                           // Simple check: do we have ANY of this ingredient left?
-                           // Ideally we check (stock - pending basket usage), but for UI speed this is acceptable visual feedback
                            return stockItem && stockItem.quantity > 0;
                         });
 
@@ -301,58 +323,15 @@ export const FloorPlan: React.FC = () => {
                 );
               })}
             </div>
-            ) : (
-            // EXISTING ORDER VIEW (If table occupied)
-            <div className="flex-1 p-8 bg-stone-50 flex flex-col items-center justify-center text-center">
-                 <div className="bg-white p-10 rounded-2xl shadow-xl max-w-lg w-full">
-                     <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${isWaitingPayment ? 'bg-blue-100 text-blue-600' : 'bg-red-100 text-red-600'}`}>
-                        {isWaitingPayment ? <DollarSign size={40} /> : <Utensils size={40} />}
-                     </div>
-                     <h2 className="text-3xl font-bold text-stone-800 mb-2">โต๊ะ {selectedTable.number} ไม่ว่าง</h2>
-                     <p className="text-stone-500 mb-8">
-                        {isWaitingPayment ? 'ลูกค้ารอชำระเงิน กรุณาเลือกช่องทางชำระ' : 'ลูกค้ากำลังใช้บริการ (ตรวจสอบรายการอาหารได้ที่ด้านขวา)'}
-                     </p>
-                     
-                     {isWaitingPayment ? (
-                       <div className="w-full space-y-3">
-                         <div className="text-sm text-stone-400 font-medium mb-1">เลือกช่องทางการชำระเงิน</div>
-                         <div className="grid grid-cols-2 gap-4">
-                            <button 
-                              onClick={() => handlePaymentReceived('CASH')}
-                              className="py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-green-600/20 flex flex-col items-center justify-center gap-2"
-                            >
-                                <Banknote size={28} />
-                                <span>เงินสด (Cash)</span>
-                            </button>
-                            <button 
-                              onClick={() => handlePaymentReceived('CARD')}
-                              className="py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-indigo-600/20 flex flex-col items-center justify-center gap-2"
-                            >
-                                <CreditCard size={28} />
-                                <span>บัตรเครดิต (Card)</span>
-                            </button>
-                         </div>
-                       </div>
-                     ) : (
-                       <button 
-                         onClick={handleCheckBill}
-                         className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xl shadow-lg shadow-blue-600/20 flex items-center justify-center gap-3"
-                       >
-                          <DollarSign /> เช็คบิล (Check Bill)
-                       </button>
-                     )}
-                 </div>
-            </div>
-            )}
 
             {/* RIGHT SIDE: Order Info & Summary */}
-            <div className="w-96 bg-white border-l border-stone-200 flex flex-col shadow-xl z-20">
+            <div className="w-96 bg-white flex flex-col shadow-xl z-20">
               <div className="p-6 bg-red-50 border-b border-red-100">
                  <div className="flex justify-between items-center mb-4">
                     <div className="flex items-center gap-2">
                       <span className="w-8 h-8 rounded-full bg-red-200 flex items-center justify-center text-red-700 font-bold">{selectedTable.number}</span>
                       <span className="text-sm font-bold text-red-900 uppercase tracking-wide">
-                        {selectedTable.status === TableStatus.AVAILABLE ? 'New Order' : 'Current Order'}
+                        {selectedTable.status === TableStatus.AVAILABLE ? 'New Order' : 'Order Details'}
                       </span>
                     </div>
                     <button onClick={() => setSelectedTable(null)} className="text-red-400 hover:text-red-700 p-1 hover:bg-red-100 rounded-full transition-colors"><X size={20} /></button>
@@ -399,78 +378,87 @@ export const FloorPlan: React.FC = () => {
                  )}
               </div>
               
-              <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                {selectedTable.status === TableStatus.AVAILABLE ? (
-                    // BASKET VIEW
-                    orderBasket.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-stone-300 space-y-3">
-                        <Utensils size={48} className="opacity-20" />
-                        <p>ยังไม่มีรายการอาหาร</p>
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                
+                {/* BASKET SECTION (New Items) */}
+                {orderBasket.length > 0 && (
+                    <div>
+                        <div className="text-xs font-bold text-stone-400 uppercase mb-2 tracking-wider">รายการที่กำลังเพิ่ม (New Basket)</div>
+                        <div className="space-y-2">
+                            {orderBasket.map((item, idx) => (
+                                <div key={idx} className="flex justify-between items-center p-3 bg-red-50 rounded-xl border border-red-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-white text-red-700 w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shadow-sm">
+                                    x{item.quantity}
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-stone-800 text-sm">{item.name}</div>
+                                        <div className="text-xs text-stone-500">฿{item.price * item.quantity}</div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => addToBasket(menu.find(m => m.id === item.menuItemId)!)} className="p-1 hover:bg-green-100 text-green-600 rounded"><Plus size={14}/></button>
+                                    <button onClick={() => removeFromBasket(idx)} className="p-1 hover:bg-red-200 text-red-600 rounded"><Minus size={14}/></button>
+                                </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="my-4 border-t border-stone-200 border-dashed"></div>
+                    </div>
+                )}
+
+                {/* CURRENT ORDER ITEMS SECTION (Read Only) */}
+                {selectedTable.status !== TableStatus.AVAILABLE && currentActiveOrder && (
+                    <div>
+                      <div className="text-xs font-bold text-stone-400 uppercase mb-2 tracking-wider">รายการที่สั่งแล้ว (Ordered)</div>
+                      <div className="space-y-2 opacity-80">
+                        {(currentActiveOrder.boxCount || 0) > 0 && (
+                            <div className="flex justify-between items-center p-2 bg-orange-50 border border-orange-100 rounded-lg">
+                                <div className="flex gap-2 items-center">
+                                <Package size={14} className="text-orange-600"/>
+                                <span className="font-bold text-stone-800 text-xs">กล่อง x{currentActiveOrder.boxCount}</span>
+                                </div>
+                                <div className="text-xs font-bold text-stone-600">฿{(currentActiveOrder.boxCount || 0) * 100}</div>
+                            </div>
+                        )}
+                        {(currentActiveOrder.bagCount || 0) > 0 && (
+                            <div className="flex justify-between items-center p-2 bg-blue-50 border border-blue-100 rounded-lg">
+                                <div className="flex gap-2 items-center">
+                                <ShoppingBag size={14} className="text-blue-600"/>
+                                <span className="font-bold text-stone-800 text-xs">ถุง x{currentActiveOrder.bagCount}</span>
+                                </div>
+                                <div className="text-xs font-bold text-green-600">Free</div>
+                            </div>
+                        )}
+                        {currentActiveOrder.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center p-2 bg-white border border-stone-100 rounded-lg">
+                                <div className="flex gap-2">
+                                    <span className="font-bold text-stone-900 text-xs">x{item.quantity}</span>
+                                    <span className="text-stone-700 text-xs">{item.name}</span>
+                                </div>
+                                <div className="text-xs font-bold text-stone-600">฿{item.price * item.quantity}</div>
+                            </div>
+                        ))}
+                        {currentActiveOrder.note && (
+                            <div className="p-2 bg-yellow-50 text-yellow-800 text-xs rounded border border-yellow-100 mt-2">
+                                <span className="font-bold">Note:</span> {currentActiveOrder.note}
+                            </div>
+                        )}
                       </div>
-                    ) : (
-                      orderBasket.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center p-3 bg-stone-50 rounded-xl group hover:bg-white hover:shadow-sm transition-all border border-transparent hover:border-stone-200">
-                          <div className="flex items-center gap-3">
-                            <div className="bg-red-100 text-red-700 w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm">
-                               x{item.quantity}
-                            </div>
-                            <div>
-                                <div className="font-bold text-stone-800 text-sm">{item.name}</div>
-                                <div className="text-xs text-stone-500">฿{item.price * item.quantity}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                             <button onClick={() => addToBasket(menu.find(m => m.id === item.menuItemId)!)} className="p-1 hover:bg-green-100 text-green-600 rounded"><Plus size={14}/></button>
-                             <button onClick={() => removeFromBasket(idx)} className="p-1 hover:bg-red-100 text-red-600 rounded"><Minus size={14}/></button>
-                          </div>
-                        </div>
-                      ))
-                    )
-                ) : (
-                    // CURRENT ORDER ITEMS VIEW
-                    <div className="space-y-2">
-                      {(currentActiveOrder?.boxCount || 0) > 0 && (
-                        <div className="flex justify-between items-center p-3 bg-orange-50 border border-orange-100 rounded-xl">
-                            <div className="flex gap-2 items-center">
-                              <Package size={16} className="text-orange-600"/>
-                              <span className="font-bold text-stone-800 text-sm">กล่อง x{currentActiveOrder?.boxCount}</span>
-                            </div>
-                            <div className="text-sm font-bold text-stone-600">฿{(currentActiveOrder?.boxCount || 0) * 100}</div>
-                        </div>
-                      )}
-                      {(currentActiveOrder?.bagCount || 0) > 0 && (
-                        <div className="flex justify-between items-center p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                            <div className="flex gap-2 items-center">
-                              <ShoppingBag size={16} className="text-blue-600"/>
-                              <span className="font-bold text-stone-800 text-sm">ถุง x{currentActiveOrder?.bagCount}</span>
-                            </div>
-                            <div className="text-sm font-bold text-green-600">Free</div>
-                        </div>
-                      )}
-                      {currentActiveOrder?.items.map((item, idx) => (
-                          <div key={idx} className="flex justify-between items-center p-3 bg-white border border-stone-100 rounded-xl">
-                            <div className="flex gap-2">
-                                <span className="font-bold text-stone-900 text-sm">x{item.quantity}</span>
-                                <span className="text-stone-700 text-sm">{item.name}</span>
-                            </div>
-                            <div className="text-sm font-bold text-stone-600">฿{item.price * item.quantity}</div>
-                          </div>
-                      ))}
                     </div>
                 )}
               </div>
 
               <div className="p-6 bg-white border-t border-stone-100">
-                {/* Box & Bag Controls for New Orders */}
-                {selectedTable.status === TableStatus.AVAILABLE && orderBasket.length > 0 && (
+                {/* Box & Bag Controls */}
+                {orderBasket.length > 0 && (
                    <div className="space-y-2 mb-4">
-                       {/* Box Control */}
                        <div className="flex items-center justify-between p-2 rounded-lg border border-stone-200 bg-orange-50/50">
                            <div className="flex items-center gap-2">
                                <Package size={18} className="text-orange-600" />
                                <div>
-                                   <div className="text-sm font-bold text-stone-700">กล่อง (Box)</div>
-                                   <div className="text-xs text-stone-400">+100 / unit</div>
+                                   <div className="text-sm font-bold text-stone-700">กล่อง</div>
+                                   <div className="text-xs text-stone-400">+100</div>
                                </div>
                            </div>
                            <div className="flex items-center gap-2">
@@ -479,13 +467,11 @@ export const FloorPlan: React.FC = () => {
                                <button onClick={() => setBoxCount(boxCount + 1)} className="p-1 rounded-md bg-white border border-stone-200 hover:bg-stone-100 text-stone-500"><Plus size={14}/></button>
                            </div>
                        </div>
-
-                       {/* Bag Control */}
                        <div className="flex items-center justify-between p-2 rounded-lg border border-stone-200 bg-blue-50/50">
                            <div className="flex items-center gap-2">
                                <ShoppingBag size={18} className="text-blue-600" />
                                <div>
-                                   <div className="text-sm font-bold text-stone-700">ถุง (Bag)</div>
+                                   <div className="text-sm font-bold text-stone-700">ถุง</div>
                                    <div className="text-xs text-green-600 font-bold">Free</div>
                                </div>
                            </div>
@@ -498,32 +484,71 @@ export const FloorPlan: React.FC = () => {
                    </div>
                 )}
 
-                <div className="flex justify-between text-stone-500 mb-2 text-sm">
-                   <span>จำนวนรายการ</span>
-                   <span>
-                     {selectedTable.status === TableStatus.AVAILABLE 
-                        ? orderBasket.reduce((sum, i) => sum + i.quantity, 0)
-                        : currentActiveOrder?.items.reduce((sum, i) => sum + i.quantity, 0)} รายการ
-                   </span>
+                {/* Note Input */}
+                <div className="mb-4">
+                    <label className="text-xs font-bold text-stone-500 flex items-center gap-1 mb-1">
+                        <Edit3 size={12}/> หมายเหตุ (Note)
+                    </label>
+                    <textarea 
+                        className="w-full border border-stone-200 rounded-lg p-2 text-sm focus:ring-1 focus:ring-red-500 outline-none resize-none bg-stone-50"
+                        rows={2}
+                        placeholder="เช่น แยก 2 กล่อง, ไม่ใส่ผัก..."
+                        value={tableNote}
+                        onChange={e => setTableNote(e.target.value)}
+                    />
                 </div>
-                <div className="flex justify-between text-2xl font-bold text-stone-800 mb-6 font-heading">
+
+                <div className="flex justify-between text-2xl font-bold text-stone-800 mb-4 font-heading">
                   <span>รวมทั้งสิ้น</span>
                   <span className="text-red-600">฿
-                     {(selectedTable.status === TableStatus.AVAILABLE 
-                        ? orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + (boxCount * 100)
-                        : currentActiveOrder?.totalAmount || 0).toLocaleString()}
+                     {(
+                        (currentActiveOrder?.totalAmount || 0) + 
+                        orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + 
+                        (boxCount * 100)
+                     ).toLocaleString()}
                   </span>
                 </div>
 
-                {selectedTable.status === TableStatus.AVAILABLE && (
+                {/* Action Buttons */}
+                {selectedTable.status === TableStatus.AVAILABLE ? (
                     <button 
                       onClick={submitOrder}
                       disabled={orderBasket.length === 0 || !customerName || isSubmitting}
                       className="w-full bg-red-600 hover:bg-red-700 disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 text-lg"
                     >
                       {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : <CheckCircle size={24} />}
-                      {isSubmitting ? 'กำลังบันทึก...' : 'ยืนยันการสั่ง'}
+                      {isSubmitting ? 'กำลังบันทึก...' : 'เปิดโต๊ะ & สั่งอาหาร'}
                     </button>
+                ) : (
+                    <div className="flex gap-2">
+                        {isWaitingPayment ? (
+                            <div className="flex-1 grid grid-cols-2 gap-2">
+                                <button onClick={() => handlePaymentReceived('CASH')} className="py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 flex flex-col items-center justify-center text-xs gap-1">
+                                    <Banknote size={20} /> เงินสด
+                                </button>
+                                <button onClick={() => handlePaymentReceived('CARD')} className="py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 flex flex-col items-center justify-center text-xs gap-1">
+                                    <CreditCard size={20} /> บัตร
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <button 
+                                    onClick={submitOrder}
+                                    disabled={isSubmitting} // Can submit note change even if empty basket
+                                    className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-white shadow-lg ${orderBasket.length > 0 ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20' : 'bg-stone-400 hover:bg-stone-500'}`}
+                                >
+                                    {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
+                                    {orderBasket.length > 0 ? 'เพิ่มรายการ' : 'บันทึก Note'}
+                                </button>
+                                <button 
+                                    onClick={handleCheckBill}
+                                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-600/20"
+                                >
+                                    <DollarSign size={20} /> เช็คบิล
+                                </button>
+                            </>
+                        )}
+                    </div>
                 )}
               </div>
             </div>

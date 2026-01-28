@@ -75,6 +75,7 @@ export interface Order {
   paymentMethod?: 'CASH' | 'CARD'; // New field
   boxCount?: number; // New: Number of boxes (100 per unit)
   bagCount?: number; // New: Number of bags (Free)
+  note?: string; // New: Table note (e.g. Separate boxes)
 }
 
 export type MenuCategory = 'Main Dish' | 'Appetizer' | 'Soup' | 'Drink' | 'Set' | 'Other';

@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { OrderStatus, Order, Role } from '../types';
-import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, ChevronUp, ChevronDown, List } from 'lucide-react';
+import { OrderStatus, Order, Role, OrderItem } from '../types';
+import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, ChevronUp, ChevronDown, List, StickyNote } from 'lucide-react';
 
 const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, menu, inventory }: any) => {
     
@@ -11,7 +11,6 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
     const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
     const isRestricted = !canAct;
 
-    // CHANGED: Instead of per-item recipe toggle, we use per-order ingredient toggle
     const [expandedIngredients, setExpandedIngredients] = useState<Set<string>>(new Set());
 
     const toggleIngredients = (orderId: string) => {
@@ -24,7 +23,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
         setExpandedIngredients(next);
     }
 
-    // NEW: Aggregate ingredients for the whole order with Categories
+    // NEW: Aggregate ingredients and SORT them
     const getAggregatedIngredients = (order: Order) => {
         const ingredientMap = new Map<string, number>();
         
@@ -38,7 +37,6 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
             }
         });
         
-        // Enrich with category from inventory
         const enriched = Array.from(ingredientMap.entries()).map(([name, qty]) => {
             const invItem = inventory.find((i: any) => i.name === name);
             return {
@@ -48,8 +46,60 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
             };
         });
 
-        return enriched;
+        // SORTING: Meat -> Veg -> Wine -> Other, then Alphabetical
+        const catOrder = { 'เนื้อสัตว์': 1, 'ผัก': 2, 'ไวน์': 3, 'ของแห้ง/อื่นๆ': 4 };
+        
+        return enriched.sort((a, b) => {
+            const catA = catOrder[a.category as keyof typeof catOrder] || 99;
+            const catB = catOrder[b.category as keyof typeof catOrder] || 99;
+            
+            if (catA !== catB) return catA - catB;
+            return a.name.localeCompare(b.name, 'th');
+        });
     };
+
+    // NEW: Custom Sort for Menu Items within an order
+    const sortOrderItems = (items: OrderItem[]) => {
+        // Categories Priority
+        const catPriority: Record<string, number> = { 
+            'Main Dish': 1, 
+            'Appetizer': 2, 
+            'Drink': 3, 
+            'Soup': 4, 
+            'Set': 5, 
+            'Other': 6 
+        };
+
+        // Specific Item Priority (Index based on list provided)
+        const itemPriorityList = [
+            'เป็ดปักกิ่ง', 'กระเพาะปลาหูฉลาม', 'เป่าฮื้อเจี๋ยนนํ้ามันหอย', 'หมูหัน/หมูกรอบ', // Main
+            'เกี๊ยวซ่า', 'เสี่ยวหลงเปา-ขนมจีบ', 'หมาล่า แห้ง/นํ้า', 'แมงกระพรุนผัดนํ้ามันงา', // Appetizer
+            'นํ้าเต้าหู้', 'ชาสมุนไพร', 'นํ้าเก็กฮวย', 'เหมาไถ (เหล้า)' // Drinks
+        ];
+
+        return [...items].sort((a, b) => {
+            const menuA = menu?.find((m: any) => m.id === a.menuItemId);
+            const menuB = menu?.find((m: any) => m.id === b.menuItemId);
+            
+            const catA = menuA ? (catPriority[menuA.category] || 99) : 99;
+            const catB = menuB ? (catPriority[menuB.category] || 99) : 99;
+
+            if (catA !== catB) return catA - catB;
+
+            // Same category, sort by specific item list
+            const indexA = itemPriorityList.indexOf(a.name);
+            const indexB = itemPriorityList.indexOf(b.name);
+            
+            // If both in list, sort by index
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            // If only A in list, A comes first
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+
+            // Fallback to name
+            return a.name.localeCompare(b.name, 'th');
+        });
+    }
 
     const getTableNumber = (tableId: string) => {
         if (!tables) return '??';
@@ -76,6 +126,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
           {items.map((order: Order) => {
              const aggregatedIngredients = getAggregatedIngredients(order);
              const isIngredientsExpanded = expandedIngredients.has(order.id);
+             const sortedItems = sortOrderItems(order.items);
 
              return (
             <div key={order.id} className={`bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition-shadow relative group ${isAlert ? 'border-red-200 shadow-red-100' : 'border-stone-200'}`}>
@@ -97,7 +148,10 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                     <div className="font-bold text-stone-800 mt-1">{order.customerName}</div>
                     <div className="text-[10px] text-red-500 uppercase font-bold tracking-wide">{order.customerClass}</div>
                   </div>
-                  <span className="text-xs text-stone-400 font-mono">{new Date(order.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                  <div className="text-right">
+                      <span className="text-xs text-stone-400 font-mono block">{new Date(order.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                      <span className="text-[10px] text-stone-300">ID: {order.id.slice(-4)}</span>
+                  </div>
                </div>
                
                {/* Box & Bag Badges */}
@@ -114,20 +168,28 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                    )}
                </div>
 
-               {/* NEW: Total Ingredients Toggle (Categorized) */}
+               {/* Note */}
+               {order.note && (
+                   <div className="mb-3 p-2 bg-yellow-50 text-yellow-800 text-xs rounded border border-yellow-200 flex items-start gap-2">
+                       <StickyNote size={14} className="shrink-0 mt-0.5" />
+                       <span className="font-bold">{order.note}</span>
+                   </div>
+               )}
+
+               {/* Total Ingredients Toggle */}
                {aggregatedIngredients.length > 0 && (
                    <div className="mb-3">
                        <button 
                          onClick={() => toggleIngredients(order.id)}
-                         className="w-full flex items-center justify-between p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition-colors"
+                         className="w-full flex items-center justify-between p-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600 text-xs font-bold transition-colors"
                        >
                            <span className="flex items-center gap-1"><List size={14}/> วัตถุดิบรวม ({aggregatedIngredients.length})</span>
                            {isIngredientsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                        </button>
                        {isIngredientsExpanded && (
-                           <div className="mt-1 p-3 bg-stone-100 rounded-lg text-xs border border-stone-200 animate-in fade-in zoom-in-95 duration-200">
+                           <div className="mt-1 p-3 bg-white rounded-lg text-xs border border-stone-200 animate-in fade-in zoom-in-95 duration-200 shadow-inner">
                                {['เนื้อสัตว์', 'ผัก', 'ไวน์', 'ของแห้ง/อื่นๆ'].map(cat => {
-                                   const catItems = aggregatedIngredients.filter(i => i.category === cat || (cat === 'ของแห้ง/อื่นๆ' && !['เนื้อสัตว์', 'ผัก', 'ไวน์'].includes(i.category)));
+                                   const catItems = aggregatedIngredients.filter(i => i.category === cat);
                                    if (catItems.length === 0) return null;
                                    
                                    let headerColor = 'text-stone-500';
@@ -137,7 +199,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
 
                                    return (
                                        <div key={cat} className="mb-2 last:mb-0">
-                                           <div className={`font-bold ${headerColor} mb-1 border-b border-stone-200 pb-0.5`}>{cat}</div>
+                                           <div className={`font-bold ${headerColor} mb-1 border-b border-stone-100 pb-0.5`}>{cat}</div>
                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                                                 {catItems.map(({name, qty}, i) => (
                                                     <div key={i} className="flex justify-between">
@@ -154,29 +216,23 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                    </div>
                )}
 
-               <div className="space-y-3 mb-4 border-t border-b border-stone-100 py-3">
-                 {order.items.map((item, idx) => {
+               <div className="space-y-2 mb-4 border-t border-b border-stone-100 py-3">
+                 {sortedItems.map((item, idx) => {
                    const isCookingPhase = order.status === OrderStatus.COOKING;
                    
                    return (
-                   <div key={idx}>
-                       <div className={`flex items-start gap-2 text-sm ${item.isCooked ? 'opacity-50' : 'text-stone-700'}`}>
-                         {isCookingPhase && !isRestricted ? (
-                             <button onClick={() => toggleItemCookedStatus(order.id, idx)} className="mt-0.5 text-stone-400 hover:text-green-600">
+                   <div key={idx} className="flex items-start gap-2 text-sm">
+                       {/* Checkbox for chefs */}
+                       {isCookingPhase && !isRestricted ? (
+                             <button onClick={() => toggleItemCookedStatus(order.id, idx)} className="mt-0.5 text-stone-400 hover:text-green-600 shrink-0">
                                  {item.isCooked ? <CheckSquare size={16} className="text-green-600"/> : <Square size={16}/>}
                              </button>
-                         ) : (
-                             <span className="font-bold text-stone-900 mt-0.5">x{item.quantity}</span>
-                         )}
-                         
-                         <div className="flex-1">
-                             <div className={`flex items-center justify-between ${item.isCooked ? 'line-through decoration-stone-400' : ''}`}>
-                                <span>
-                                    {isCookingPhase && !isRestricted && <span className="font-bold mr-1">x{item.quantity}</span>}
-                                    {item.name}
-                                </span>
-                             </div>
-                         </div>
+                       ) : (
+                             <span className={`font-bold mt-0.5 w-6 text-center shrink-0 ${item.isCooked ? 'text-green-600' : 'text-stone-900'}`}>x{item.quantity}</span>
+                       )}
+                       
+                       <div className={`flex-1 ${item.isCooked ? 'opacity-50 line-through decoration-stone-400' : 'text-stone-800'}`}>
+                           {item.name}
                        </div>
                    </div>
                  )})}
@@ -218,12 +274,19 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
 export const KitchenView: React.FC = () => {
   const { orders, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, currentUser, menu, inventory } = useStore();
   
-  // Safe filtering: Ensure orders is an array before filtering
+  // Safe filtering
   const safeOrders = Array.isArray(orders) ? orders : [];
 
-  const pendingOrders = safeOrders.filter(o => o.status === OrderStatus.PENDING);
-  const cookingOrders = safeOrders.filter(o => o.status === OrderStatus.COOKING);
-  const servingOrders = safeOrders.filter(o => o.status === OrderStatus.SERVING);
+  // Sort Orders: Oldest First (Time Ascending)
+  // User request: "Number Time Order Max to Min" -> usually implies sorting by time.
+  // Standard KDS uses Oldest First (FIFO) so chefs cook order that came first.
+  const sortOrders = (os: Order[]) => {
+      return os.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  };
+
+  const pendingOrders = sortOrders(safeOrders.filter(o => o.status === OrderStatus.PENDING));
+  const cookingOrders = sortOrders(safeOrders.filter(o => o.status === OrderStatus.COOKING));
+  const servingOrders = sortOrders(safeOrders.filter(o => o.status === OrderStatus.SERVING));
 
   return (
     <div className="h-full flex flex-col">
@@ -231,7 +294,7 @@ export const KitchenView: React.FC = () => {
           <h2 className="text-3xl font-bold text-stone-800 flex items-center gap-2">
             <ChefHat className="text-red-600" /> งานครัวและบริการ (KDS)
           </h2>
-          <div className="text-xs text-stone-400 font-mono">System Ready</div>
+          <div className="text-xs text-stone-400 font-mono">Sorted by Time (Oldest First)</div>
       </div>
 
       {/* Alert Banner */}
