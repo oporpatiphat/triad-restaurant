@@ -2,11 +2,11 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
-import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem } from '../types';
-import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package, ShoppingBag, Truck, Edit3 } from 'lucide-react';
+import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem, Order } from '../types';
+import { Utensils, Users, CheckCircle, Search, X, DollarSign, CreditCard, Banknote, Plus, Minus, AlertOctagon, Loader2, Package, ShoppingBag, Truck, Edit3, UtensilsCrossed } from 'lucide-react';
 
 export const FloorPlan: React.FC = () => {
-  const { tables, menu, inventory, createOrder, addItemsToOrder, updateOrderStatus, orders } = useStore();
+  const { tables, menu, inventory, createOrder, addItemsToOrder, requestCheckBill, settleTableBill, orders } = useStore();
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   
   // New Order / Add Items State
@@ -18,12 +18,40 @@ export const FloorPlan: React.FC = () => {
   const [boxCount, setBoxCount] = useState(0); 
   const [bagCount, setBagCount] = useState(0); 
   const [tableNote, setTableNote] = useState('');
+  
+  // NEW: Staff Meal Toggle
+  const [isStaffMeal, setIsStaffMeal] = useState(false);
 
   const availableMenu = menu.filter(m => m.isAvailable && m.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  // Get Active Order for selected table
-  const currentActiveOrder = selectedTable?.currentOrderId ? orders.find(o => o.id === selectedTable.currentOrderId) : null;
-  const isWaitingPayment = currentActiveOrder?.status === OrderStatus.WAITING_PAYMENT;
+  // AGGREGATE ALL ACTIVE ORDERS FOR THIS TABLE
+  const tableActiveOrders = useMemo(() => {
+     if (!selectedTable) return [];
+     return orders.filter(o => 
+         o.tableId === selectedTable.id && 
+         o.status !== OrderStatus.COMPLETED && 
+         o.status !== OrderStatus.CANCELLED
+     ).sort((a,b) => a.timestamp.getTime() - b.timestamp.getTime());
+  }, [selectedTable, orders]);
+
+  // Derive "Main" info from the first active order
+  const mainActiveOrder = tableActiveOrders.length > 0 ? tableActiveOrders[0] : null;
+  const isWaitingPayment = tableActiveOrders.some(o => o.status === OrderStatus.WAITING_PAYMENT);
+
+  // Combine items for display in the summary
+  const aggregatedItems = useMemo(() => {
+     const allItems: { item: OrderItem, orderId: string, status: OrderStatus, isStaffMeal?: boolean }[] = [];
+     tableActiveOrders.forEach(order => {
+         order.items.forEach(item => {
+             allItems.push({ item, orderId: order.id, status: order.status, isStaffMeal: order.isStaffMeal });
+         });
+     });
+     return allItems;
+  }, [tableActiveOrders]);
+
+  const aggregatedTotal = useMemo(() => {
+      return tableActiveOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+  }, [tableActiveOrders]);
 
   // Derive unique past customers for suggestion
   const pastCustomers = useMemo(() => {
@@ -39,14 +67,8 @@ export const FloorPlan: React.FC = () => {
     setCustomerClass(CustomerClass.MIDDLE);
     setBoxCount(0);
     setBagCount(0);
-    
-    // Pre-fill note if existing order
-    if (table.currentOrderId) {
-        const order = orders.find(o => o.id === table.currentOrderId);
-        setTableNote(order?.note || '');
-    } else {
-        setTableNote('');
-    }
+    setTableNote('');
+    setIsStaffMeal(false); // Reset staff meal toggle
   };
 
   const addToBasket = (item: MenuItem) => {
@@ -91,35 +113,34 @@ export const FloorPlan: React.FC = () => {
   const submitOrder = async () => {
     if (!selectedTable) return;
     
-    // If it's a NEW order, we need items and name
+    setIsSubmitting(true);
+
     if (selectedTable.status === TableStatus.AVAILABLE) {
+        // NEW TABLE OPENING
         if (orderBasket.length === 0) {
             alert("กรุณาเลือกรายการอาหาร");
+            setIsSubmitting(false);
             return;
         }
         if (!customerName) {
             alert("กรุณาระบุชื่อลูกค้า");
+            setIsSubmitting(false);
             return;
         }
-        setIsSubmitting(true);
-        const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, boxCount, bagCount, tableNote);
-        setIsSubmitting(false);
+        const success = await createOrder(selectedTable.id, customerName, customerClass, orderBasket, boxCount, bagCount, tableNote, isStaffMeal);
         if (success) cleanupAndClose();
     } else {
-        // If it's an EXISTING order (Adding items)
+        // ADDING ITEMS (CREATES NEW ORDER)
         if (orderBasket.length === 0 && !tableNote) {
-             // If nothing added, just close
-             setSelectedTable(null);
+             setSelectedTable(null); // Just close if nothing to add
              return;
         }
         
-        setIsSubmitting(true);
-        if (currentActiveOrder) {
-            const success = await addItemsToOrder(currentActiveOrder.id, orderBasket, boxCount, bagCount, tableNote);
-            setIsSubmitting(false);
-            if (success) cleanupAndClose();
-        }
+        // Use the new function that spawns a separate order document
+        const success = await addItemsToOrder(selectedTable.id, orderBasket, boxCount, bagCount, tableNote, isStaffMeal);
+        if (success) cleanupAndClose();
     }
+    setIsSubmitting(false);
   };
 
   const cleanupAndClose = () => {
@@ -127,17 +148,18 @@ export const FloorPlan: React.FC = () => {
       setOrderBasket([]);
       setCustomerName('');
       setTableNote('');
+      setIsStaffMeal(false);
   };
 
-  const handleCheckBill = () => {
-    if (currentActiveOrder) {
-      updateOrderStatus(currentActiveOrder.id, OrderStatus.WAITING_PAYMENT);
+  const handleCheckBill = async () => {
+    if (selectedTable) {
+      await requestCheckBill(selectedTable.id);
     }
   };
 
-  const handlePaymentReceived = (method: 'CASH' | 'CARD') => {
-    if (currentActiveOrder) {
-      updateOrderStatus(currentActiveOrder.id, OrderStatus.COMPLETED, undefined, method);
+  const handlePaymentReceived = async (method: 'CASH' | 'CARD') => {
+    if (selectedTable) {
+      await settleTableBill(selectedTable.id, method);
       setSelectedTable(null);
     }
   };
@@ -145,9 +167,11 @@ export const FloorPlan: React.FC = () => {
   const getTableStatusColor = (table: Table) => {
     if (table.status === TableStatus.AVAILABLE) return 'bg-white border-green-500/30 text-stone-700 hover:border-green-500 hover:bg-green-50/30';
     
-    // Check if waiting for payment
-    const order = orders.find(o => o.id === table.currentOrderId);
-    if (order?.status === OrderStatus.WAITING_PAYMENT) {
+    // Check if any order on table is waiting for payment
+    const activeOrders = orders.filter(o => o.tableId === table.id && o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED);
+    const isWaiting = activeOrders.some(o => o.status === OrderStatus.WAITING_PAYMENT);
+    
+    if (isWaiting) {
        return 'bg-blue-50 border-blue-500 text-blue-800 shadow-blue-100 animate-pulse';
     }
     
@@ -156,8 +180,11 @@ export const FloorPlan: React.FC = () => {
 
   const getTableStatusText = (table: Table) => {
     if (table.status === TableStatus.AVAILABLE) return 'ว่าง';
-    const order = orders.find(o => o.id === table.currentOrderId);
-    if (order?.status === OrderStatus.WAITING_PAYMENT) return 'รอชำระเงิน';
+    
+    const activeOrders = orders.filter(o => o.tableId === table.id && o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED);
+    const isWaiting = activeOrders.some(o => o.status === OrderStatus.WAITING_PAYMENT);
+
+    if (isWaiting) return 'รอชำระเงิน';
     return 'ไม่ว่าง';
   }
 
@@ -168,8 +195,8 @@ export const FloorPlan: React.FC = () => {
         <h3 className={`text-xl font-bold text-stone-600 mb-4 px-2 border-l-4 ${isDelivery ? 'border-orange-500 text-orange-700' : 'border-red-600'}`}>{title}</h3>
         <div className="grid grid-cols-4 gap-8">
           {tables.filter(t => t.floor === floor).map(table => {
-            const order = orders.find(o => o.id === table.currentOrderId);
-            const isWaitingPay = order?.status === OrderStatus.WAITING_PAYMENT;
+            const activeOrders = orders.filter(o => o.tableId === table.id && o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED);
+            const isWaitingPay = activeOrders.some(o => o.status === OrderStatus.WAITING_PAYMENT);
             
             return (
             <button
@@ -221,6 +248,9 @@ export const FloorPlan: React.FC = () => {
     );
   };
 
+  // Helper to calculate current basket price
+  const basketTotal = orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + (boxCount * 100);
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex justify-between items-center mb-8">
@@ -236,7 +266,6 @@ export const FloorPlan: React.FC = () => {
       </div>
 
       <div className="flex-1 bg-white rounded-3xl p-8 shadow-sm border border-stone-200 overflow-y-auto relative">
-        {/* Floor Background Decor */}
         <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#a8a29e 1px, transparent 1px)', backgroundSize: '24px 24px' }}></div>
         
         <div className="relative z-10">
@@ -251,14 +280,14 @@ export const FloorPlan: React.FC = () => {
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-7xl h-[90vh] rounded-3xl shadow-2xl flex overflow-hidden border border-stone-200">
             
-            {/* LEFT SIDE: Menu Selection (Always visible now to allow adding items) */}
+            {/* LEFT SIDE: Menu Selection */}
             <div className="flex-1 p-8 overflow-y-auto bg-stone-50 border-r border-stone-200">
               <div className="flex justify-between items-center mb-6">
                 <div>
                   <h3 className="text-2xl font-bold text-stone-800 font-heading">
                       {selectedTable.status === TableStatus.AVAILABLE ? 'เปิดโต๊ะ / สั่งอาหาร' : 'สั่งอาหารเพิ่ม (Add Items)'}
                   </h3>
-                  <p className="text-stone-500 text-sm">เลือกรายการเพื่อเพิ่มลงในออเดอร์</p>
+                  <p className="text-stone-500 text-sm">เลือกรายการเพื่อเพิ่มลงในออเดอร์ (ออเดอร์ใหม่จะถูกส่งเข้าครัวแยกใบ)</p>
                 </div>
                 <div className="relative w-64">
                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
@@ -272,7 +301,6 @@ export const FloorPlan: React.FC = () => {
                 </div>
               </div>
 
-              {/* Categorized Menu */}
               {['Main Dish', 'Appetizer', 'Soup', 'Drink', 'Set', 'Other'].map(category => {
                 const items = availableMenu.filter(m => m.category === category);
                 if (items.length === 0) return null;
@@ -283,12 +311,8 @@ export const FloorPlan: React.FC = () => {
                       {items.map(item => {
                         const inBasketItem = orderBasket.find(i => i.menuItemId === item.id);
                         const inBasketQty = inBasketItem ? inBasketItem.quantity : 0;
-                        
-                        // Check Daily Stock Quota
                         const remainingQuota = item.dailyStock === -1 ? 999 : item.dailyStock - inBasketQty;
                         const isQuotaFull = remainingQuota <= 0;
-
-                        // Check Physical Inventory
                         const hasIngredients = item.ingredients.every(ingName => {
                            const stockItem = inventory.find(i => i.name === ingName);
                            return stockItem && stockItem.quantity > 0;
@@ -331,7 +355,7 @@ export const FloorPlan: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <span className="w-8 h-8 rounded-full bg-red-200 flex items-center justify-center text-red-700 font-bold">{selectedTable.number}</span>
                       <span className="text-sm font-bold text-red-900 uppercase tracking-wide">
-                        {selectedTable.status === TableStatus.AVAILABLE ? 'New Order' : 'Order Details'}
+                        {selectedTable.status === TableStatus.AVAILABLE ? 'New Table' : 'Combined Bill'}
                       </span>
                     </div>
                     <button onClick={() => setSelectedTable(null)} className="text-red-400 hover:text-red-700 p-1 hover:bg-red-100 rounded-full transition-colors"><X size={20} /></button>
@@ -370,10 +394,10 @@ export const FloorPlan: React.FC = () => {
                     </div>
                  </div>
                  ) : (
-                    // Display existing customer info
                     <div className="bg-white p-3 rounded-lg border border-red-100">
-                       <div className="text-sm font-bold text-stone-800">{currentActiveOrder?.customerName}</div>
-                       <div className="text-xs text-red-500 font-bold uppercase">{currentActiveOrder?.customerClass}</div>
+                       <div className="text-sm font-bold text-stone-800">{mainActiveOrder?.customerName || 'Unknown'}</div>
+                       <div className="text-xs text-red-500 font-bold uppercase">{mainActiveOrder?.customerClass || 'General'}</div>
+                       <div className="text-[10px] text-stone-400 mt-1">{tableActiveOrders.length} Active Orders</div>
                     </div>
                  )}
               </div>
@@ -383,8 +407,20 @@ export const FloorPlan: React.FC = () => {
                 {/* BASKET SECTION (New Items) */}
                 {orderBasket.length > 0 && (
                     <div>
-                        <div className="text-xs font-bold text-stone-400 uppercase mb-2 tracking-wider">รายการที่กำลังเพิ่ม (New Basket)</div>
-                        <div className="space-y-2">
+                        <div className="flex items-center justify-between mb-2">
+                           <div className="text-xs font-bold text-stone-400 uppercase tracking-wider">รายการที่กำลังเพิ่ม (New Order)</div>
+                           
+                           {/* Staff Meal Toggle */}
+                           <button 
+                             onClick={() => setIsStaffMeal(!isStaffMeal)}
+                             className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold transition-colors border ${isStaffMeal ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-stone-100 text-stone-400 border-transparent hover:bg-stone-200'}`}
+                           >
+                              <UtensilsCrossed size={12} />
+                              {isStaffMeal ? 'Staff Meal (ฟรี)' : 'ทำกินเอง?'}
+                           </button>
+                        </div>
+                        
+                        <div className={`space-y-2 p-2 rounded-xl transition-colors ${isStaffMeal ? 'bg-amber-50/50 border border-amber-100' : ''}`}>
                             {orderBasket.map((item, idx) => (
                                 <div key={idx} className="flex justify-between items-center p-3 bg-red-50 rounded-xl border border-red-100">
                                 <div className="flex items-center gap-3">
@@ -393,7 +429,9 @@ export const FloorPlan: React.FC = () => {
                                     </div>
                                     <div>
                                         <div className="font-bold text-stone-800 text-sm">{item.name}</div>
-                                        <div className="text-xs text-stone-500">฿{item.price * item.quantity}</div>
+                                        <div className="text-xs text-stone-500">
+                                            {isStaffMeal ? <span className="text-amber-600 font-bold line-through decoration-amber-600/50">฿{item.price * item.quantity}</span> : `฿${item.price * item.quantity}`}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1">
@@ -407,43 +445,53 @@ export const FloorPlan: React.FC = () => {
                     </div>
                 )}
 
-                {/* CURRENT ORDER ITEMS SECTION (Read Only) */}
-                {selectedTable.status !== TableStatus.AVAILABLE && currentActiveOrder && (
+                {/* ACTIVE ORDERS ITEMS SECTION (Aggregated) */}
+                {selectedTable.status !== TableStatus.AVAILABLE && aggregatedItems.length > 0 && (
                     <div>
-                      <div className="text-xs font-bold text-stone-400 uppercase mb-2 tracking-wider">รายการที่สั่งแล้ว (Ordered)</div>
+                      <div className="text-xs font-bold text-stone-400 uppercase mb-2 tracking-wider">รายการที่สั่งแล้ว (Total Bill)</div>
                       <div className="space-y-2 opacity-80">
-                        {(currentActiveOrder.boxCount || 0) > 0 && (
+                        {/* Display Boxes/Bags Summation */}
+                        {tableActiveOrders.reduce((s, o) => s + (o.boxCount || 0), 0) > 0 && (
                             <div className="flex justify-between items-center p-2 bg-orange-50 border border-orange-100 rounded-lg">
                                 <div className="flex gap-2 items-center">
                                 <Package size={14} className="text-orange-600"/>
-                                <span className="font-bold text-stone-800 text-xs">กล่อง x{currentActiveOrder.boxCount}</span>
+                                <span className="font-bold text-stone-800 text-xs">รวมกล่อง x{tableActiveOrders.reduce((s, o) => s + (o.boxCount || 0), 0)}</span>
                                 </div>
-                                <div className="text-xs font-bold text-stone-600">฿{(currentActiveOrder.boxCount || 0) * 100}</div>
+                                <div className="text-xs font-bold text-stone-600">฿{tableActiveOrders.reduce((s, o) => s + (o.boxCount || 0) * 100, 0)}</div>
                             </div>
                         )}
-                        {(currentActiveOrder.bagCount || 0) > 0 && (
+                        {tableActiveOrders.reduce((s, o) => s + (o.bagCount || 0), 0) > 0 && (
                             <div className="flex justify-between items-center p-2 bg-blue-50 border border-blue-100 rounded-lg">
                                 <div className="flex gap-2 items-center">
                                 <ShoppingBag size={14} className="text-blue-600"/>
-                                <span className="font-bold text-stone-800 text-xs">ถุง x{currentActiveOrder.bagCount}</span>
+                                <span className="font-bold text-stone-800 text-xs">รวมถุง x{tableActiveOrders.reduce((s, o) => s + (o.bagCount || 0), 0)}</span>
                                 </div>
                                 <div className="text-xs font-bold text-green-600">Free</div>
                             </div>
                         )}
-                        {currentActiveOrder.items.map((item, idx) => (
-                            <div key={idx} className="flex justify-between items-center p-2 bg-white border border-stone-100 rounded-lg">
-                                <div className="flex gap-2">
-                                    <span className="font-bold text-stone-900 text-xs">x{item.quantity}</span>
-                                    <span className="text-stone-700 text-xs">{item.name}</span>
+
+                        {/* Display Items */}
+                        {aggregatedItems.map((entry, idx) => (
+                            <div key={idx} className={`flex justify-between items-center p-2 border rounded-lg ${entry.isStaffMeal ? 'bg-amber-50 border-amber-200' : 'bg-white border-stone-100'}`}>
+                                <div className="flex gap-2 items-center">
+                                    <span className="font-bold text-stone-900 text-xs">x{entry.item.quantity}</span>
+                                    <span className="text-stone-700 text-xs">{entry.item.name}</span>
+                                    {/* Small indicator of which order batch it belongs to (Optional, but useful) */}
+                                    <span className="text-[9px] text-stone-300 ml-1">#{entry.orderId.slice(-3)}</span>
+                                    {entry.isStaffMeal && <span className="text-[9px] bg-amber-200 text-amber-800 px-1 rounded font-bold">Staff</span>}
                                 </div>
-                                <div className="text-xs font-bold text-stone-600">฿{item.price * item.quantity}</div>
+                                <div className="text-xs font-bold text-stone-600">
+                                   {entry.isStaffMeal ? <span className="text-amber-600">ฟรี</span> : `฿${entry.item.price * entry.item.quantity}`}
+                                </div>
                             </div>
                         ))}
-                        {currentActiveOrder.note && (
-                            <div className="p-2 bg-yellow-50 text-yellow-800 text-xs rounded border border-yellow-100 mt-2">
-                                <span className="font-bold">Note:</span> {currentActiveOrder.note}
+
+                        {/* Show Notes from all orders */}
+                        {tableActiveOrders.map(o => o.note && (
+                            <div key={o.id} className="p-2 bg-yellow-50 text-yellow-800 text-xs rounded border border-yellow-100 mt-1">
+                                <span className="font-bold">Note #{o.id.slice(-3)}:</span> {o.note}
                             </div>
-                        )}
+                        ))}
                       </div>
                     </div>
                 )}
@@ -458,7 +506,7 @@ export const FloorPlan: React.FC = () => {
                                <Package size={18} className="text-orange-600" />
                                <div>
                                    <div className="text-sm font-bold text-stone-700">กล่อง</div>
-                                   <div className="text-xs text-stone-400">+100</div>
+                                   <div className="text-xs text-stone-400">{isStaffMeal ? 'ฟรี' : '+100'}</div>
                                </div>
                            </div>
                            <div className="flex items-center gap-2">
@@ -484,10 +532,10 @@ export const FloorPlan: React.FC = () => {
                    </div>
                 )}
 
-                {/* Note Input */}
+                {/* Note Input (Only for new items) */}
                 <div className="mb-4">
                     <label className="text-xs font-bold text-stone-500 flex items-center gap-1 mb-1">
-                        <Edit3 size={12}/> หมายเหตุ (Note)
+                        <Edit3 size={12}/> หมายเหตุสำหรับออเดอร์ใหม่
                     </label>
                     <textarea 
                         className="w-full border border-stone-200 rounded-lg p-2 text-sm focus:ring-1 focus:ring-red-500 outline-none resize-none bg-stone-50"
@@ -500,13 +548,16 @@ export const FloorPlan: React.FC = () => {
 
                 <div className="flex justify-between text-2xl font-bold text-stone-800 mb-4 font-heading">
                   <span>รวมทั้งสิ้น</span>
-                  <span className="text-red-600">฿
-                     {(
-                        (currentActiveOrder?.totalAmount || 0) + 
-                        orderBasket.reduce((sum, i) => sum + (i.price * i.quantity), 0) + 
-                        (boxCount * 100)
-                     ).toLocaleString()}
-                  </span>
+                  {isStaffMeal && orderBasket.length > 0 ? (
+                      <span className="text-amber-600 flex flex-col items-end">
+                         <span className="text-sm font-normal text-stone-400 line-through">฿{basketTotal.toLocaleString()}</span>
+                         <span>ฟรี (Staff)</span>
+                      </span>
+                  ) : (
+                      <span className="text-red-600">฿
+                         {(aggregatedTotal + basketTotal).toLocaleString()}
+                      </span>
+                  )}
                 </div>
 
                 {/* Action Buttons */}
@@ -534,11 +585,11 @@ export const FloorPlan: React.FC = () => {
                             <>
                                 <button 
                                     onClick={submitOrder}
-                                    disabled={isSubmitting} // Can submit note change even if empty basket
+                                    disabled={isSubmitting} // Even if basket empty, might just close
                                     className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-white shadow-lg ${orderBasket.length > 0 ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20' : 'bg-stone-400 hover:bg-stone-500'}`}
                                 >
                                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
-                                    {orderBasket.length > 0 ? 'เพิ่มรายการ' : 'บันทึก Note'}
+                                    {orderBasket.length > 0 ? 'สั่งเพิ่ม (แยกใบ)' : 'ปิดหน้าต่าง'}
                                 </button>
                                 <button 
                                     onClick={handleCheckBill}
