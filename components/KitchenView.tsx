@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role, OrderItem } from '../types';
-import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, ChevronUp, ChevronDown, List, StickyNote } from 'lucide-react';
+import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, ChevronUp, ChevronDown, List, StickyNote, ArrowDown01, ArrowDownAZ, ArrowUpDown } from 'lucide-react';
 
 const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, menu, inventory }: any) => {
     
@@ -12,6 +12,8 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
     const isRestricted = !canAct;
 
     const [expandedIngredients, setExpandedIngredients] = useState<Set<string>>(new Set());
+    // NEW: State for sorting mode
+    const [ingredientSortMode, setIngredientSortMode] = useState<'QTY' | 'NAME'>('QTY');
 
     const toggleIngredients = (orderId: string) => {
         const next = new Set(expandedIngredients);
@@ -46,15 +48,25 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
             };
         });
 
-        // SORTING: Meat -> Veg -> Wine -> Other, then Alphabetical
+        // SORTING LOGIC
         const catOrder = { 'เนื้อสัตว์': 1, 'ผัก': 2, 'ไวน์': 3, 'ของแห้ง/อื่นๆ': 4 };
         
         return enriched.sort((a, b) => {
+            // 1. Category Priority (Always keep categories separate)
             const catA = catOrder[a.category as keyof typeof catOrder] || 99;
             const catB = catOrder[b.category as keyof typeof catOrder] || 99;
-            
             if (catA !== catB) return catA - catB;
-            return a.name.localeCompare(b.name, 'th');
+
+            // 2. Sort Mode
+            if (ingredientSortMode === 'QTY') {
+                // Quantity High -> Low
+                if (b.qty !== a.qty) return b.qty - a.qty;
+                // Fallback to Name
+                return a.name.localeCompare(b.name, 'th');
+            } else {
+                // Name A -> Z
+                return a.name.localeCompare(b.name, 'th');
+            }
         });
     };
 
@@ -220,6 +232,28 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                        </button>
                        {isIngredientsExpanded && (
                            <div className="mt-1 p-3 bg-white rounded-lg text-xs border border-stone-200 animate-in fade-in zoom-in-95 duration-200 shadow-inner">
+                               
+                               {/* Sort Toggle Controls */}
+                               <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-2">
+                                  <span className="text-[10px] font-bold text-stone-400 flex items-center gap-1">
+                                     <ArrowUpDown size={10} /> เรียงลำดับ (Sort)
+                                  </span>
+                                  <div className="flex gap-1">
+                                     <button 
+                                        onClick={(e) => { e.stopPropagation(); setIngredientSortMode('QTY'); }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border transition-colors ${ingredientSortMode === 'QTY' ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
+                                     >
+                                        <ArrowDown01 size={10} /> จำนวน
+                                     </button>
+                                     <button 
+                                        onClick={(e) => { e.stopPropagation(); setIngredientSortMode('NAME'); }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border transition-colors ${ingredientSortMode === 'NAME' ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
+                                     >
+                                        <ArrowDownAZ size={10} /> ชื่อ
+                                     </button>
+                                  </div>
+                               </div>
+
                                {['เนื้อสัตว์', 'ผัก', 'ไวน์', 'ของแห้ง/อื่นๆ'].map(cat => {
                                    const catItems = aggregatedIngredients.filter(i => i.category === cat);
                                    if (catItems.length === 0) return null;
@@ -236,7 +270,7 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                                                 {catItems.map(({name, qty}, i) => (
                                                     <div key={i} className="flex justify-between">
                                                         <span className="text-stone-600">{name}</span>
-                                                        <span className="font-bold text-stone-800">x{qty}</span>
+                                                        <span className={`font-bold ${qty > 1 ? 'text-red-700 text-base' : 'text-stone-800'}`}>x{qty}</span>
                                                     </div>
                                                 ))}
                                            </div>
