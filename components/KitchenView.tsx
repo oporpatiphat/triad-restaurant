@@ -58,48 +58,16 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
         });
     };
 
-    // NEW: Custom Sort for Menu Items within an order
-    const sortOrderItems = (items: OrderItem[]) => {
-        // Categories Priority
-        const catPriority: Record<string, number> = { 
-            'Main Dish': 1, 
-            'Appetizer': 2, 
-            'Drink': 3, 
-            'Soup': 4, 
-            'Set': 5, 
-            'Other': 6 
-        };
-
-        // Specific Item Priority (Index based on list provided)
+    // Specific Item Priority Sorting Logic (Internal helper)
+    const getSpecificItemPriority = (name: string) => {
         const itemPriorityList = [
             'เป็ดปักกิ่ง', 'กระเพาะปลาหูฉลาม', 'เป่าฮื้อเจี๋ยนนํ้ามันหอย', 'หมูหัน/หมูกรอบ', // Main
             'เกี๊ยวซ่า', 'เสี่ยวหลงเปา-ขนมจีบ', 'หมาล่า แห้ง/นํ้า', 'แมงกระพรุนผัดนํ้ามันงา', // Appetizer
             'นํ้าเต้าหู้', 'ชาสมุนไพร', 'นํ้าเก็กฮวย', 'เหมาไถ (เหล้า)' // Drinks
         ];
-
-        return [...items].sort((a, b) => {
-            const menuA = menu?.find((m: any) => m.id === a.menuItemId);
-            const menuB = menu?.find((m: any) => m.id === b.menuItemId);
-            
-            const catA = menuA ? (catPriority[menuA.category] || 99) : 99;
-            const catB = menuB ? (catPriority[menuB.category] || 99) : 99;
-
-            if (catA !== catB) return catA - catB;
-
-            // Same category, sort by specific item list
-            const indexA = itemPriorityList.indexOf(a.name);
-            const indexB = itemPriorityList.indexOf(b.name);
-            
-            // If both in list, sort by index
-            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-            // If only A in list, A comes first
-            if (indexA !== -1) return -1;
-            if (indexB !== -1) return 1;
-
-            // Fallback to name
-            return a.name.localeCompare(b.name, 'th');
-        });
-    }
+        const idx = itemPriorityList.indexOf(name);
+        return idx !== -1 ? idx : 999;
+    };
 
     const getTableNumber = (tableId: string) => {
         if (!tables) return '??';
@@ -111,6 +79,71 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
         if(confirm("ยืนยันการยกเลิกออเดอร์นี้? โต๊ะจะกลับเป็นสถานะว่าง")) {
             cancelOrder(orderId);
         }
+    };
+
+    // Render grouped items logic
+    const renderOrderItems = (order: Order) => {
+        // 1. Group items by Category
+        const groups: Record<string, OrderItem[]> = {};
+        const catOrder = ['Main Dish', 'Appetizer', 'Soup', 'Drink', 'Set', 'Other'];
+
+        order.items.forEach(item => {
+            const m = menu?.find((x: any) => x.id === item.menuItemId);
+            const cat = m ? m.category : 'Other';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push(item);
+        });
+
+        return catOrder.map(cat => {
+            const groupItems = groups[cat];
+            if (!groupItems || groupItems.length === 0) return null;
+
+            // 2. Sort within group (Specific Item Priority -> Alphabetical)
+            const sortedGroup = [...groupItems].sort((a, b) => {
+                const priorityA = getSpecificItemPriority(a.name);
+                const priorityB = getSpecificItemPriority(b.name);
+                if (priorityA !== priorityB) return priorityA - priorityB;
+                return a.name.localeCompare(b.name, 'th');
+            });
+
+            // Determine Header Color
+            let headerColor = 'text-stone-400'; // Default
+            if (cat === 'Main Dish') headerColor = 'text-red-600';
+            if (cat === 'Drink') headerColor = 'text-blue-500';
+            if (cat === 'Appetizer') headerColor = 'text-orange-500';
+
+            return (
+                <div key={cat} className="mb-3 last:mb-0">
+                    <div className={`text-[10px] font-bold uppercase border-b border-stone-100 mb-1.5 pb-0.5 ${headerColor}`}>
+                        {cat}
+                    </div>
+                    <div className="space-y-2">
+                        {sortedGroup.map((item, idx) => {
+                            const isCookingPhase = order.status === OrderStatus.COOKING;
+                            // IMPORTANT: Find ORIGINAL index in order.items for the toggle function
+                            const originalIndex = order.items.indexOf(item); 
+
+                            return (
+                                <div key={idx} className="flex items-start gap-2 text-sm">
+                                    {/* Checkbox for chefs */}
+                                    {isCookingPhase && !isRestricted ? (
+                                        <button onClick={() => toggleItemCookedStatus(order.id, originalIndex)} className="mt-0.5 text-stone-400 hover:text-green-600 shrink-0">
+                                            {item.isCooked ? <CheckSquare size={16} className="text-green-600" /> : <Square size={16} />}
+                                        </button>
+                                    ) : (
+                                        <span className={`font-bold mt-0.5 w-6 text-center shrink-0 ${item.isCooked ? 'text-green-600' : 'text-stone-900'}`}>x{item.quantity}</span>
+                                    )}
+
+                                    <div className={`flex-1 ${item.isCooked ? 'opacity-50 line-through decoration-stone-400' : 'text-stone-800'}`}>
+                                        {item.name}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        });
     };
     
     return (
@@ -126,7 +159,6 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
           {items.map((order: Order) => {
              const aggregatedIngredients = getAggregatedIngredients(order);
              const isIngredientsExpanded = expandedIngredients.has(order.id);
-             const sortedItems = sortOrderItems(order.items);
 
              return (
             <div key={order.id} className={`bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition-shadow relative group ${isAlert ? 'border-red-200 shadow-red-100' : 'border-stone-200'}`}>
@@ -216,26 +248,9 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                    </div>
                )}
 
+               {/* Render Order Items (Grouped) */}
                <div className="space-y-2 mb-4 border-t border-b border-stone-100 py-3">
-                 {sortedItems.map((item, idx) => {
-                   const isCookingPhase = order.status === OrderStatus.COOKING;
-                   
-                   return (
-                   <div key={idx} className="flex items-start gap-2 text-sm">
-                       {/* Checkbox for chefs */}
-                       {isCookingPhase && !isRestricted ? (
-                             <button onClick={() => toggleItemCookedStatus(order.id, idx)} className="mt-0.5 text-stone-400 hover:text-green-600 shrink-0">
-                                 {item.isCooked ? <CheckSquare size={16} className="text-green-600"/> : <Square size={16}/>}
-                             </button>
-                       ) : (
-                             <span className={`font-bold mt-0.5 w-6 text-center shrink-0 ${item.isCooked ? 'text-green-600' : 'text-stone-900'}`}>x{item.quantity}</span>
-                       )}
-                       
-                       <div className={`flex-1 ${item.isCooked ? 'opacity-50 line-through decoration-stone-400' : 'text-stone-800'}`}>
-                           {item.name}
-                       </div>
-                   </div>
-                 )})}
+                   {renderOrderItems(order)}
                </div>
 
                {/* Staff Info */}
