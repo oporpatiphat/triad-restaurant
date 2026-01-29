@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, Table, MenuItem, Ingredient, Order, Role, TableStatus, OrderStatus, SessionRecord, StoreSession, OrderItem, CustomerClass } from '../types';
+import { User, Table, MenuItem, Ingredient, Order, TableStatus, OrderStatus, SessionRecord, StoreSession, OrderItem, CustomerClass } from '../types';
 import { MOCK_USERS, INITIAL_MENU, INITIAL_INGREDIENTS, generateTables, INITIAL_POSITIONS } from '../constants';
 import { db, isCloudEnabled } from './firebaseConfig';
-import { collection, doc, getDocs, setDoc, updateDoc, onSnapshot, runTransaction, query, where, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, onSnapshot, runTransaction, deleteDoc, writeBatch } from 'firebase/firestore';
 
 // Storage Keys
 const KEYS = {

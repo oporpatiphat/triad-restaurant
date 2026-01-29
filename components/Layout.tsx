@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/StoreContext';
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
-import { LayoutGrid, ChefHat, Package, History, Settings, LogOut, Clock, Menu, PlayCircle, StopCircle, User, Users, Activity } from 'lucide-react';
+import { LayoutGrid, ChefHat, Package, History, Settings, LogOut, Clock, Menu, PlayCircle, StopCircle, User, Users } from 'lucide-react';
 import { MenuItem } from '../types';
 
 export const Layout: React.FC = () => {
