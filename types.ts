@@ -76,6 +76,7 @@ export interface Order {
   boxCount?: number; // New: Number of boxes (100 per unit)
   bagCount?: number; // New: Number of bags (Free)
   note?: string; // New: Table note (e.g. Separate boxes)
+  isStaffMeal?: boolean; // NEW: Flag for staff meals (deduct stock, no money)
 }
 
 export type MenuCategory = 'Main Dish' | 'Appetizer' | 'Soup' | 'Drink' | 'Set' | 'Other';
