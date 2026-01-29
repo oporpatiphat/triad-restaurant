@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { MenuItem, Table, TableStatus, CustomerClass, OrderStatus, OrderItem } from '../types';
@@ -38,14 +36,30 @@ export const FloorPlan: React.FC = () => {
   const mainActiveOrder = tableActiveOrders.length > 0 ? tableActiveOrders[0] : null;
   const isWaitingPayment = tableActiveOrders.some(o => o.status === OrderStatus.WAITING_PAYMENT);
 
-  // Combine items for display in the summary (SORTED by Category then Custom Order)
+  // Combine items for display in the summary (AGGREGATED & SORTED)
   const aggregatedItems = useMemo(() => {
-     const allItems: { item: OrderItem, orderId: string, status: OrderStatus, isStaffMeal?: boolean }[] = [];
+     // Map for aggregation: Key = menuItemId + isStaffMeal
+     const itemMap = new Map<string, { item: OrderItem, isStaffMeal: boolean }>();
+
      tableActiveOrders.forEach(order => {
          order.items.forEach(item => {
-             allItems.push({ item, orderId: order.id, status: order.status, isStaffMeal: order.isStaffMeal });
+             const key = `${item.menuItemId}_${!!order.isStaffMeal}`;
+             const existing = itemMap.get(key);
+             
+             if (existing) {
+                 existing.item.quantity += item.quantity;
+                 // Note: we accumulate quantity. Price is per unit, so total is calced on render.
+             } else {
+                 // Deep copy item to avoid mutating original order state
+                 itemMap.set(key, { 
+                     item: { ...item }, 
+                     isStaffMeal: !!order.isStaffMeal 
+                 });
+             }
          });
      });
+
+     const allItems = Array.from(itemMap.values());
 
      // SORT LOGIC
      return allItems.sort((a, b) => {
@@ -503,12 +517,10 @@ export const FloorPlan: React.FC = () => {
                                 <div className="flex gap-2 items-center">
                                     <span className="font-bold text-stone-900 text-xs">x{entry.item.quantity}</span>
                                     <span className="text-stone-700 text-xs">{entry.item.name}</span>
-                                    {/* Small indicator of which order batch it belongs to (Optional, but useful) */}
-                                    <span className="text-[9px] text-stone-300 ml-1">#{entry.orderId.slice(-3)}</span>
                                     {entry.isStaffMeal && <span className="text-[9px] bg-amber-200 text-amber-800 px-1 rounded font-bold">Staff</span>}
                                 </div>
                                 <div className="text-xs font-bold text-stone-600">
-                                   {entry.isStaffMeal ? <span className="text-amber-600">ฟรี</span> : `฿${entry.item.price * entry.item.quantity}`}
+                                   {entry.isStaffMeal ? <span className="text-amber-600">ฟรี</span> : `฿${(entry.item.price * entry.item.quantity).toLocaleString()}`}
                                 </div>
                             </div>
                         ))}
