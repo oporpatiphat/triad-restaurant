@@ -93,6 +93,7 @@ export interface MenuItem {
   isAvailable: boolean; // For daily availability toggle
   dailyStock: number;   // -1 for unlimited, or specific quantity
   source?: 'TRIAD' | 'OTHER'; // NEW: Distinguish shop source
+  sortOrder?: number; // NEW: Custom sort order
 }
 
 export type IngredientCategory = 'เนื้อสัตว์' | 'ผัก' | 'ของแห้ง/อื่นๆ' | 'ไวน์';

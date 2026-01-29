@@ -1,5 +1,3 @@
-
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Table, Order, MenuItem, Ingredient, TableStatus, OrderStatus, CustomerClass, StoreSession, OrderItem, Role, SessionRecord } from '../types';
 import { generateTables, INITIAL_INGREDIENTS, INITIAL_MENU, MOCK_USERS, INITIAL_POSITIONS } from '../constants';
@@ -32,6 +30,7 @@ interface StoreContextType {
   deleteMenuItem: (itemId: string) => void;
   toggleMenuAvailability: (itemId: string) => void;
   updateMenuStock: (itemId: string, quantity: number) => void;
+  reorderMenuItem: (itemId: string, direction: 'up' | 'down') => void; // NEW: Reorder
   inventory: Ingredient[];
   updateIngredientQuantity: (itemId: string, delta: number) => void;
   addIngredient: (ingredient: Ingredient) => void;
@@ -53,9 +52,10 @@ interface StoreContextType {
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
-const ENHANCED_INITIAL_MENU = INITIAL_MENU.map(item => ({
+const ENHANCED_INITIAL_MENU = INITIAL_MENU.map((item, index) => ({
   ...item,
-  dailyStock: -1 
+  dailyStock: -1,
+  sortOrder: index // Init with index
 }));
 
 const KEYS = {
@@ -153,7 +153,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (isCloudMode) return [];
     try {
       const saved = localStorage.getItem(KEYS.MENU);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+         // Migration for sortOrder if missing
+         const m = JSON.parse(saved);
+         return m.map((item: MenuItem, idx: number) => ({
+            ...item,
+            sortOrder: item.sortOrder !== undefined ? item.sortOrder : idx
+         }));
+      }
     } catch(e) {}
     return ENHANCED_INITIAL_MENU;
   });
@@ -797,8 +804,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const addMenuItem = async (item: MenuItem) => {
-    if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), item);
-    else { setMenu(prev => { const next = [...prev, item]; saveToStorage(KEYS.MENU, next); return next; }); }
+    // New: auto assign sortOrder
+    const newOrder = menu.length > 0 ? Math.max(...menu.map(m => m.sortOrder || 0)) + 1 : 0;
+    const newItem = { ...item, sortOrder: newOrder };
+
+    if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), newItem);
+    else { setMenu(prev => { const next = [...prev, newItem]; saveToStorage(KEYS.MENU, next); return next; }); }
   };
   const updateMenuItem = async (item: MenuItem) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'menu', item.id), item);
@@ -816,6 +827,51 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (isCloudMode && db) await updateDoc(doc(db!, 'menu', itemId), { dailyStock: quantity });
     else { setMenu(prev => { const next = prev.map(item => item.id === itemId ? { ...item, dailyStock: quantity } : item); saveToStorage(KEYS.MENU, next); return next; }); }
   };
+
+  const reorderMenuItem = async (itemId: string, direction: 'up' | 'down') => {
+      // 1. Get current item
+      const item = menu.find(m => m.id === itemId);
+      if(!item) return;
+
+      // 2. Filter siblings in same category
+      const siblings = menu.filter(m => m.category === item.category).sort((a,b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      const idx = siblings.findIndex(s => s.id === itemId);
+      
+      if(idx === -1) return;
+
+      // 3. Find swap target
+      let swapTarget: MenuItem | undefined;
+      if (direction === 'up' && idx > 0) {
+          swapTarget = siblings[idx - 1];
+      } else if (direction === 'down' && idx < siblings.length - 1) {
+          swapTarget = siblings[idx + 1];
+      }
+
+      if(!swapTarget) return;
+
+      // 4. Swap Orders
+      const itemOrder = item.sortOrder || 0;
+      const targetOrder = swapTarget.sortOrder || 0;
+
+      // 5. Update
+      if (isCloudMode && db) {
+          const batch = writeBatch(db!);
+          batch.update(doc(db!, 'menu', item.id), { sortOrder: targetOrder });
+          batch.update(doc(db!, 'menu', swapTarget.id), { sortOrder: itemOrder });
+          await batch.commit();
+      } else {
+          setMenu(prev => {
+             const next = prev.map(m => {
+                 if (m.id === item.id) return { ...m, sortOrder: targetOrder };
+                 if (m.id === swapTarget!.id) return { ...m, sortOrder: itemOrder };
+                 return m;
+             });
+             saveToStorage(KEYS.MENU, next);
+             return next;
+          });
+      }
+  };
+
   const addIngredient = async (ingredient: Ingredient) => {
     if (isCloudMode && db) await setDoc(doc(db!, 'inventory', ingredient.id), ingredient);
     else { setInventory(prev => { const next = [...prev, ingredient]; saveToStorage(KEYS.INVENTORY, next); return next; }); }
@@ -878,7 +934,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       tables, updateTableStatus,
       orders, createOrder, addItemsToOrder, updateOrderStatus, toggleItemCookedStatus, cancelOrder, deleteOrder,
       requestCheckBill, settleTableBill,
-      menu, addMenuItem, updateMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock,
+      menu, addMenuItem, updateMenuItem, deleteMenuItem, toggleMenuAvailability, updateMenuStock, reorderMenuItem,
       inventory, updateIngredientQuantity, addIngredient, removeIngredient,
       staffList, addStaff, updateStaff, terminateStaff, deleteStaff,
       availablePositions, addPosition, removePosition, movePosition,

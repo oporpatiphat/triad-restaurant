@@ -1,15 +1,16 @@
-
-
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
-import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2, Edit, Store, Globe } from 'lucide-react';
+import { Coffee, Plus, ToggleLeft, ToggleRight, X, Tag, FileText, DollarSign, CheckSquare, Trash2, Edit, Store, Globe, ArrowLeft, ArrowRight, ArrowUpDown } from 'lucide-react';
 import { MenuItem } from '../types';
 
 export const MenuManagement: React.FC = () => {
-  const { menu, addMenuItem, updateMenuItem, deleteMenuItem, toggleMenuAvailability, inventory } = useStore();
+  const { menu, addMenuItem, updateMenuItem, deleteMenuItem, toggleMenuAvailability, inventory, reorderMenuItem } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   
+  // New: Reorder Mode
+  const [isReorderMode, setIsReorderMode] = useState(false);
+
   // Default new item to TRIAD source
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({
     name: '',
@@ -112,12 +113,20 @@ export const MenuManagement: React.FC = () => {
           </h2>
           <p className="text-stone-500 text-sm mt-1">เพิ่มลบแก้ไขรายการอาหารและราคา</p>
         </div>
-        <button 
-          onClick={handleCreate}
-          className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-red-600/20 transition-all active:scale-95"
-        >
-          <Plus size={20} /> เพิ่มเมนูใหม่
-        </button>
+        <div className="flex gap-2">
+            <button 
+              onClick={() => setIsReorderMode(!isReorderMode)}
+              className={`px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 transition-all border ${isReorderMode ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-100'}`}
+            >
+               <ArrowUpDown size={18} /> {isReorderMode ? 'เสร็จสิ้น (Done)' : 'จัดเรียง (Sort)'}
+            </button>
+            <button 
+              onClick={handleCreate}
+              className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-red-600/20 transition-all active:scale-95"
+            >
+              <Plus size={20} /> เพิ่มเมนูใหม่
+            </button>
+        </div>
       </div>
 
       {showForm && (
@@ -302,7 +311,11 @@ export const MenuManagement: React.FC = () => {
 
       <div className="space-y-8 pb-10">
         {categories.map(cat => {
-            const items = menu.filter(m => m.category === cat);
+            // Filter AND Sort items
+            const items = menu
+               .filter(m => m.category === cat)
+               .sort((a,b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
             if(items.length === 0) return null;
             return (
                 <div key={cat}>
@@ -311,28 +324,47 @@ export const MenuManagement: React.FC = () => {
                         {cat}
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {items.map(item => {
+                        {items.map((item, idx) => {
                             const isTriad = item.source !== 'OTHER'; // Default to Triad if undefined
                             return (
                         <div key={item.id} className={`bg-white p-5 rounded-2xl shadow-sm border transition-all hover:shadow-md group relative ${item.isAvailable ? 'border-stone-200' : 'border-stone-200 bg-stone-50 opacity-80'}`}>
                             
-                            {/* Action Buttons (Visible on Hover) */}
-                            <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all z-10">
-                                <button 
-                                    onClick={() => handleEdit(item)}
-                                    className="bg-white text-stone-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-full shadow-sm border border-stone-200"
-                                    title="แก้ไขเมนู"
-                                >
-                                    <Edit size={16} />
-                                </button>
-                                <button 
-                                    onClick={() => handleDelete(item)}
-                                    className="bg-white text-stone-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full shadow-sm border border-stone-200"
-                                    title="ลบเมนู"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
+                            {/* Action Buttons (Visible on Hover) or Reorder Buttons */}
+                            {isReorderMode ? (
+                                <div className="absolute top-0 right-0 p-2 flex gap-1 z-10">
+                                   <button 
+                                      onClick={() => reorderMenuItem(item.id, 'up')}
+                                      disabled={idx === 0}
+                                      className="p-2 bg-stone-100 hover:bg-stone-800 hover:text-white rounded text-stone-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                   >
+                                      <ArrowLeft size={16} />
+                                   </button>
+                                   <button 
+                                      onClick={() => reorderMenuItem(item.id, 'down')}
+                                      disabled={idx === items.length - 1}
+                                      className="p-2 bg-stone-100 hover:bg-stone-800 hover:text-white rounded text-stone-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                   >
+                                      <ArrowRight size={16} />
+                                   </button>
+                                </div>
+                            ) : (
+                                <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all z-10">
+                                    <button 
+                                        onClick={() => handleEdit(item)}
+                                        className="bg-white text-stone-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-full shadow-sm border border-stone-200"
+                                        title="แก้ไขเมนู"
+                                    >
+                                        <Edit size={16} />
+                                    </button>
+                                    <button 
+                                        onClick={() => handleDelete(item)}
+                                        className="bg-white text-stone-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full shadow-sm border border-stone-200"
+                                        title="ลบเมนู"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            )}
 
                             <div className="flex justify-between items-start mb-3">
                                 <div>
@@ -340,13 +372,16 @@ export const MenuManagement: React.FC = () => {
                                     {!isTriad && <span className="text-[10px] bg-stone-200 text-stone-500 px-1 rounded inline-block mt-0.5">ร้านอื่น</span>}
                                     {isTriad && <span className="text-[10px] bg-red-50 text-red-500 px-1 rounded inline-block mt-0.5">Triad</span>}
                                 </div>
-                                <button 
-                                  onClick={() => toggleMenuAvailability(item.id)}
-                                  className={`transition-colors ${item.isAvailable ? 'text-green-500 hover:text-green-600' : 'text-stone-300 hover:text-stone-400'}`}
-                                  title={item.isAvailable ? "Available (Click to disable)" : "Unavailable (Click to enable)"}
-                                >
-                                    {item.isAvailable ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
-                                </button>
+                                
+                                {!isReorderMode && (
+                                    <button 
+                                    onClick={() => toggleMenuAvailability(item.id)}
+                                    className={`transition-colors ${item.isAvailable ? 'text-green-500 hover:text-green-600' : 'text-stone-300 hover:text-stone-400'}`}
+                                    title={item.isAvailable ? "Available (Click to disable)" : "Unavailable (Click to enable)"}
+                                    >
+                                        {item.isAvailable ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
+                                    </button>
+                                )}
                             </div>
                             
                             <p className="text-stone-500 text-sm mb-4 min-h-[40px] line-clamp-2 leading-relaxed">
