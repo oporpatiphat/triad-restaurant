@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role, OrderItem } from '../types';
@@ -139,9 +138,12 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                                 <div key={idx} className="flex items-start gap-2 text-sm">
                                     {/* Checkbox for chefs */}
                                     {isCookingPhase && !isRestricted ? (
-                                        <button onClick={() => toggleItemCookedStatus(order.id, originalIndex)} className="mt-0.5 text-stone-400 hover:text-green-600 shrink-0">
-                                            {item.isCooked ? <CheckSquare size={16} className="text-green-600" /> : <Square size={16} />}
-                                        </button>
+                                        <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                                            <button onClick={() => toggleItemCookedStatus(order.id, originalIndex)} className="text-stone-400 hover:text-green-600">
+                                                {item.isCooked ? <CheckSquare size={18} className="text-green-600" /> : <Square size={18} />}
+                                            </button>
+                                            <span className={`font-bold text-sm w-5 text-center ${item.isCooked ? 'text-green-600' : 'text-stone-900'}`}>x{item.quantity}</span>
+                                        </div>
                                     ) : (
                                         <span className={`font-bold mt-0.5 w-6 text-center shrink-0 ${item.isCooked ? 'text-green-600' : 'text-stone-900'}`}>x{item.quantity}</span>
                                     )}
