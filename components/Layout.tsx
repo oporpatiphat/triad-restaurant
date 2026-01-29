@@ -32,10 +32,11 @@ export const Layout: React.FC = () => {
 
   useEffect(() => {
     if (showOpenModal) {
+      // INHERIT availability from master menu (User Request)
       setDailyMenu(menu.map(m => ({ 
         ...m, 
         dailyStock: 0, 
-        isAvailable: false 
+        isAvailable: m.isAvailable // Default to what is set in Menu Management
       })));
     }
   }, [showOpenModal, menu]);
@@ -384,6 +385,13 @@ export const Layout: React.FC = () => {
                  }
                  
                  if (categoryItems.length === 0) return null;
+
+                 // SORTING: Available First
+                 categoryItems.sort((a, b) => {
+                     if (a.isAvailable && !b.isAvailable) return -1;
+                     if (!a.isAvailable && b.isAvailable) return 1;
+                     return 0;
+                 });
 
                  return (
                    <div key={category} className="mb-8 animate-in slide-in-from-bottom-2 duration-300">

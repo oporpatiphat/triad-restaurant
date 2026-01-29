@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/StoreContext';
 import { Calculator, ShoppingBag, ArrowRight, Search, Copy, Check, Utensils, XCircle, Plus, Minus, Activity, RefreshCw, AlertTriangle, CloudOff, Database, Store, Globe, Filter } from 'lucide-react';
@@ -291,11 +289,19 @@ export const AdminDashboard: React.FC = () => {
                {displayedMenus.length === 0 && <div className="text-center p-10 text-stone-400">ไม่พบเมนูในหมวดนี้</div>}
             </div>
 
-            <div className="p-4 border-t border-stone-200 bg-white">
+            <div className="p-4 border-t border-stone-200 bg-white flex gap-3">
+                {activeCount > 0 && (
+                   <button 
+                     onClick={clearAll} 
+                     className="px-4 py-3 bg-red-50 text-red-600 rounded-xl font-bold flex items-center justify-center gap-2 border border-red-100 hover:bg-red-100 transition-colors"
+                   >
+                       <XCircle size={20} /> Reset
+                   </button>
+                )}
                 <button 
                   onClick={handleCalculate}
                   disabled={activeCount === 0}
-                  className="w-full bg-stone-800 hover:bg-black disabled:bg-stone-300 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg"
+                  className="flex-1 bg-stone-800 hover:bg-black disabled:bg-stone-300 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-all"
                 >
                    คำนวณวัตถุดิบ ({activeCount} รายการ) <ArrowRight size={20} />
                 </button>
@@ -414,46 +420,50 @@ export const AdminDashboard: React.FC = () => {
                 </div>
                 <div className="p-6 grid grid-cols-3 gap-8">
                     <div className="text-center">
-                        <div className="text-3xl font-bold text-stone-800 mb-1">{activeOrders.length}</div>
-                        <div className="text-xs text-stone-500 uppercase font-bold">Active Orders</div>
-                    </div>
-                    <div className="flex flex-col items-center justify-center">
-                        <div className={`h-1 w-full rounded ${isHealthy ? 'bg-green-200' : 'bg-red-200'}`}></div>
-                        <div className={`mt-2 text-xs font-bold ${isHealthy ? 'text-green-600' : 'text-red-600'}`}>
-                            {isHealthy ? 'MATCHED' : 'MISMATCH'}
-                        </div>
+                        <div className="text-3xl font-bold text-stone-800">{activeOrders.length}</div>
+                        <div className="text-xs text-stone-500 uppercase font-bold mt-1">Active Orders</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-3xl font-bold text-stone-800 mb-1">{occupiedTables.length}</div>
-                        <div className="text-xs text-stone-500 uppercase font-bold">Occupied Tables</div>
+                        <div className="text-3xl font-bold text-stone-800">{occupiedTables.length}</div>
+                        <div className="text-xs text-stone-500 uppercase font-bold mt-1">Occupied Tables</div>
+                    </div>
+                    <div className="text-center flex flex-col items-center justify-center">
+                        {!isHealthy ? (
+                             <button 
+                               onClick={handleSelfHeal}
+                               className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold text-xs flex items-center gap-2 shadow-lg animate-pulse"
+                             >
+                                <RefreshCw size={14} /> Fix Mismatch
+                             </button>
+                        ) : (
+                             <div className="text-green-500 font-bold flex items-center gap-1">
+                                <Check size={16} /> All Good
+                             </div>
+                        )}
                     </div>
                 </div>
             </div>
-            
-            <div className="flex justify-center gap-4">
-                {isCloudMode && (
-                    <button 
-                      onClick={handleInitCloud}
-                      className="px-8 py-4 rounded-xl font-bold flex items-center gap-3 shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200"
-                    >
-                        <Database size={24} />
-                        เตรียมฐานข้อมูล Cloud (Initialize)
-                    </button>
-                )}
-                <button 
-                  onClick={handleSelfHeal}
-                  disabled={isHealthy}
-                  className={`px-8 py-4 rounded-xl font-bold flex items-center gap-3 shadow-lg transition-all ${isHealthy ? 'bg-stone-200 text-stone-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200'}`}
-                >
-                    <RefreshCw size={24} className={!isHealthy ? "animate-spin-slow" : ""} />
-                    {isHealthy ? 'ระบบปกติ (No Action Needed)' : 'ซ่อมแซมข้อมูล (Run Self-Healing)'}
-                </button>
-            </div>
-            
-            <p className="text-center text-stone-400 text-sm mt-4 max-w-lg mx-auto">
-               หากเพิ่งเชื่อมต่อ Cloud ครั้งแรก ให้กดปุ่ม "เตรียมฐานข้อมูล Cloud" เพื่อสร้างโต๊ะและเมนู<br/>
-               จากนั้นหากพบปัญหาข้อมูลไม่ตรงกัน ให้กด "ซ่อมแซมข้อมูล"
-            </p>
+
+            {/* Cloud Tools */}
+            {isCloudMode && (
+                <div className="bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden">
+                    <div className="p-4 bg-stone-50 border-b border-stone-200 font-bold text-stone-700 flex items-center gap-2">
+                        <Database size={18} /> Cloud Tools
+                    </div>
+                    <div className="p-6">
+                        <p className="text-sm text-stone-600 mb-4">
+                            หากข้อมูลบน Cloud หายไปหรือเป็นค่าว่าง (เช่น เพิ่งสร้าง Database ใหม่) 
+                            คุณสามารถกดปุ่มด้านล่างเพื่อสร้างข้อมูลเริ่มต้น (Tables, Menu, Staff) ได้
+                        </p>
+                        <button 
+                          onClick={handleInitCloud}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm flex items-center gap-2"
+                        >
+                            <Database size={16} /> Initialize Cloud Data
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
       )}
     </div>

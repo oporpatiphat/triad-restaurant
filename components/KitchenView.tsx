@@ -1,5 +1,3 @@
-
-
 import React, { useState } from 'react';
 import { useStore } from '../services/StoreContext';
 import { OrderStatus, Order, Role, OrderItem } from '../types';
@@ -136,17 +134,22 @@ const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, action
                             const originalIndex = order.items.indexOf(item); 
 
                             return (
-                                <div key={idx} className="flex items-start gap-2 text-sm">
-                                    {/* Checkbox for chefs */}
+                                <div key={idx} className="flex items-center gap-3 text-sm">
+                                    {/* Checkbox for chefs with ENHANCED Quantity */}
                                     {isCookingPhase && !isRestricted ? (
-                                        <button onClick={() => toggleItemCookedStatus(order.id, originalIndex)} className="mt-0.5 text-stone-400 hover:text-green-600 shrink-0">
-                                            {item.isCooked ? <CheckSquare size={16} className="text-green-600" /> : <Square size={16} />}
-                                        </button>
+                                        <div className="flex items-center gap-2 mt-0.5 shrink-0">
+                                            <span className={`font-black text-lg w-8 text-center rounded px-1 ${item.isCooked ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>
+                                                {item.quantity}
+                                            </span>
+                                            <button onClick={() => toggleItemCookedStatus(order.id, originalIndex)} className="text-stone-300 hover:text-green-600 transition-colors transform hover:scale-110">
+                                                {item.isCooked ? <CheckSquare size={24} className="text-green-600" /> : <Square size={24} strokeWidth={1.5} />}
+                                            </button>
+                                        </div>
                                     ) : (
                                         <span className={`font-bold mt-0.5 w-6 text-center shrink-0 ${item.isCooked ? 'text-green-600' : 'text-stone-900'}`}>x{item.quantity}</span>
                                     )}
 
-                                    <div className={`flex-1 ${item.isCooked ? 'opacity-50 line-through decoration-stone-400' : 'text-stone-800'}`}>
+                                    <div className={`flex-1 font-medium ${item.isCooked ? 'opacity-40 line-through decoration-stone-400' : 'text-stone-800'}`}>
                                         {item.name}
                                     </div>
                                 </div>
