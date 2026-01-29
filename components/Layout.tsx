@@ -1,411 +1,539 @@
-
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useStore } from '../services/StoreContext';
-import { OrderStatus, Order, Role, OrderItem } from '../types';
-import { ChefHat, Flame, User, ArrowRight, AlertTriangle, AlertCircle, X, CheckSquare, Square, Package, ShoppingBag, ChevronUp, ChevronDown, List, StickyNote, ArrowDown01, ArrowDownAZ, ArrowUpDown } from 'lucide-react';
+import { Role, OrderStatus, MenuItem } from '../types';
+import { Armchair, ChefHat, Refrigerator, LogOut, Coffee, Users, History, Crown, Clock, X, Check, Search, AlertCircle, Minus, Plus, Calculator, Cloud, CloudOff, ArrowUpToLine, Filter, Store, Globe } from 'lucide-react';
 
-const KanbanColumn = ({ title, items, icon: Icon, colorClass, nextStatus, actionLabel, isAlert, currentUser, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, menu, inventory }: any) => {
-    
-    // Permission: Owner, Staff, Chef can act
-    const canAct = currentUser?.role === Role.OWNER || currentUser?.role === Role.STAFF || currentUser?.role === Role.CHEF;
-    const isRestricted = !canAct;
-
-    const [expandedIngredients, setExpandedIngredients] = useState<Set<string>>(new Set());
-    // NEW: State for sorting mode
-    const [ingredientSortMode, setIngredientSortMode] = useState<'QTY' | 'NAME'>('QTY');
-
-    const toggleIngredients = (orderId: string) => {
-        const next = new Set(expandedIngredients);
-        if (next.has(orderId)) {
-            next.delete(orderId);
-        } else {
-            next.add(orderId);
-        }
-        setExpandedIngredients(next);
-    }
-
-    // NEW: Aggregate ingredients and SORT them
-    const getAggregatedIngredients = (order: Order) => {
-        const ingredientMap = new Map<string, number>();
-        
-        order.items.forEach(item => {
-            const menuItem = menu?.find((m: any) => m.id === item.menuItemId);
-            if (menuItem && menuItem.ingredients) {
-                menuItem.ingredients.forEach((ing: string) => {
-                    const current = ingredientMap.get(ing) || 0;
-                    ingredientMap.set(ing, current + item.quantity);
-                });
-            }
-        });
-        
-        const enriched = Array.from(ingredientMap.entries()).map(([name, qty]) => {
-            const invItem = inventory.find((i: any) => i.name === name);
-            return {
-                name,
-                qty,
-                category: invItem ? invItem.category : 'ของแห้ง/อื่นๆ'
-            };
-        });
-
-        // SORTING LOGIC
-        const catOrder = { 'เนื้อสัตว์': 1, 'ผัก': 2, 'ไวน์': 3, 'ของแห้ง/อื่นๆ': 4 };
-        
-        return enriched.sort((a, b) => {
-            // 1. Category Priority (Always keep categories separate)
-            const catA = catOrder[a.category as keyof typeof catOrder] || 99;
-            const catB = catOrder[b.category as keyof typeof catOrder] || 99;
-            if (catA !== catB) return catA - catB;
-
-            // 2. Sort Mode
-            if (ingredientSortMode === 'QTY') {
-                // Quantity High -> Low
-                if (b.qty !== a.qty) return b.qty - a.qty;
-                // Fallback to Name
-                return a.name.localeCompare(b.name, 'th');
-            } else {
-                // Name A -> Z
-                return a.name.localeCompare(b.name, 'th');
-            }
-        });
-    };
-
-    // Specific Item Priority Sorting Logic (Internal helper)
-    const getSpecificItemPriority = (name: string) => {
-        const itemPriorityList = [
-            'เป็ดปักกิ่ง', 'กระเพาะปลาหูฉลาม', 'เป่าฮื้อเจี๋ยนนํ้ามันหอย', 'หมูหัน/หมูกรอบ', // Main
-            'เกี๊ยวซ่า', 'เสี่ยวหลงเปา-ขนมจีบ', 'หมาล่า แห้ง/นํ้า', 'แมงกระพรุนผัดนํ้ามันงา', // Appetizer
-            'นํ้าเต้าหู้', 'ชาสมุนไพร', 'นํ้าเก็กฮวย', 'เหมาไถ (เหล้า)' // Drinks
-        ];
-        const idx = itemPriorityList.indexOf(name);
-        return idx !== -1 ? idx : 999;
-    };
-
-    const getTableNumber = (tableId: string) => {
-        if (!tables) return '??';
-        const t = tables.find((t: any) => t.id === tableId);
-        return t ? t.number : '??';
-    };
-
-    const handleCancel = (orderId: string) => {
-        if(confirm("ยืนยันการยกเลิกออเดอร์นี้? โต๊ะจะกลับเป็นสถานะว่าง")) {
-            cancelOrder(orderId);
-        }
-    };
-
-    // Render grouped items logic
-    const renderOrderItems = (order: Order) => {
-        // 1. Group items by Category
-        const groups: Record<string, OrderItem[]> = {};
-        const catOrder = ['Main Dish', 'Appetizer', 'Soup', 'Drink', 'Set', 'Other'];
-
-        order.items.forEach(item => {
-            const m = menu?.find((x: any) => x.id === item.menuItemId);
-            const cat = m ? m.category : 'Other';
-            if (!groups[cat]) groups[cat] = [];
-            groups[cat].push(item);
-        });
-
-        return catOrder.map(cat => {
-            const groupItems = groups[cat];
-            if (!groupItems || groupItems.length === 0) return null;
-
-            // 2. Sort within group (Specific Item Priority -> Alphabetical)
-            const sortedGroup = [...groupItems].sort((a, b) => {
-                const priorityA = getSpecificItemPriority(a.name);
-                const priorityB = getSpecificItemPriority(b.name);
-                if (priorityA !== priorityB) return priorityA - priorityB;
-                return a.name.localeCompare(b.name, 'th');
-            });
-
-            // Determine Header Color
-            let headerColor = 'text-stone-400'; // Default
-            if (cat === 'Main Dish') headerColor = 'text-red-600';
-            if (cat === 'Drink') headerColor = 'text-blue-500';
-            if (cat === 'Appetizer') headerColor = 'text-orange-500';
-
-            return (
-                <div key={cat} className="mb-3 last:mb-0">
-                    <div className={`text-[10px] font-bold uppercase border-b border-stone-100 mb-1.5 pb-0.5 ${headerColor}`}>
-                        {cat}
-                    </div>
-                    <div className="space-y-2">
-                        {sortedGroup.map((item, idx) => {
-                            const isCookingPhase = order.status === OrderStatus.COOKING;
-                            // IMPORTANT: Find ORIGINAL index in order.items for the toggle function
-                            const originalIndex = order.items.indexOf(item); 
-
-                            return (
-                                <div key={idx} className="flex items-start gap-2 text-sm">
-                                    {/* Checkbox for chefs */}
-                                    {isCookingPhase && !isRestricted ? (
-                                        <button onClick={() => toggleItemCookedStatus(order.id, originalIndex)} className="mt-0.5 text-stone-400 hover:text-green-600 shrink-0">
-                                            {item.isCooked ? <CheckSquare size={16} className="text-green-600" /> : <Square size={16} />}
-                                        </button>
-                                    ) : (
-                                        <span className={`font-bold mt-0.5 w-6 text-center shrink-0 ${item.isCooked ? 'text-green-600' : 'text-stone-900'}`}>x{item.quantity}</span>
-                                    )}
-
-                                    <div className={`flex-1 ${item.isCooked ? 'opacity-50 line-through decoration-stone-400' : 'text-stone-800'}`}>
-                                        {item.name}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            );
-        });
-    };
-    
-    return (
-      <div className={`flex flex-col h-full bg-white rounded-2xl border shadow-sm overflow-hidden ${isAlert ? 'border-red-500 ring-2 ring-red-100' : 'border-stone-200'}`}>
-        <div className={`p-4 border-b ${isAlert ? 'border-red-500 bg-red-600 text-white' : 'border-stone-100 ' + colorClass + ' bg-opacity-10'} flex items-center justify-between`}>
-          <div className={`flex items-center gap-2 font-bold ${isAlert ? 'text-white' : 'text-stone-700'}`}>
-            <Icon size={20} className={isAlert ? "text-white animate-pulse" : "text-stone-800"} />
-            <h3>{title}</h3>
-            <span className={`${isAlert ? 'bg-red-800 text-white' : 'bg-white text-stone-700'} px-2 py-0.5 rounded-full text-xs border shadow-sm`}>{items.length}</span>
-          </div>
-        </div>
-        <div className={`flex-1 overflow-y-auto p-3 space-y-3 ${isAlert ? 'bg-red-50' : 'bg-stone-50/50'}`}>
-          {items.map((order: Order) => {
-             const aggregatedIngredients = getAggregatedIngredients(order);
-             const isIngredientsExpanded = expandedIngredients.has(order.id);
-
-             return (
-            <div key={order.id} className={`bg-white p-4 rounded-xl shadow-sm border hover:shadow-md transition-shadow relative group ${isAlert ? 'border-red-200 shadow-red-100' : 'border-stone-200'}`}>
-               
-               {/* Cancel Button */}
-               {!isRestricted && (
-                   <button 
-                     onClick={(e) => { e.stopPropagation(); handleCancel(order.id); }}
-                     className="absolute top-3 right-3 text-stone-300 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors"
-                     title="ยกเลิกออเดอร์ (Cancel Order)"
-                   >
-                       <X size={16} />
-                   </button>
-               )}
-
-               <div className="flex justify-between items-start mb-3 pr-6">
-                  <div>
-                    <span className={`text-xs font-bold px-2 py-1 rounded ${isAlert ? 'bg-red-100 text-red-700' : 'text-stone-500 bg-stone-100'}`}>โต๊ะ {getTableNumber(order.tableId)}</span>
-                    <div className="font-bold text-stone-800 mt-1">{order.customerName}</div>
-                    <div className="text-[10px] text-red-500 uppercase font-bold tracking-wide">{order.customerClass}</div>
-                  </div>
-                  <div className="text-right">
-                      <span className="text-xs text-stone-400 font-mono block">{new Date(order.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                      <span className="text-[10px] text-stone-300">ID: {order.id.slice(-4)}</span>
-                  </div>
-               </div>
-               
-               {/* Box & Bag Badges */}
-               <div className="flex flex-wrap gap-2 mb-2">
-                   {(order.boxCount || 0) > 0 && (
-                       <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100 inline-flex items-center gap-1 font-bold">
-                           <Package size={12} /> กล่อง x{order.boxCount}
-                       </div>
-                   )}
-                   {(order.bagCount || 0) > 0 && (
-                       <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-100 inline-flex items-center gap-1 font-bold">
-                           <ShoppingBag size={12} /> ถุง x{order.bagCount}
-                       </div>
-                   )}
-               </div>
-
-               {/* Note */}
-               {order.note && (
-                   <div className="mb-3 p-2 bg-yellow-50 text-yellow-800 text-xs rounded border border-yellow-200 flex items-start gap-2">
-                       <StickyNote size={14} className="shrink-0 mt-0.5" />
-                       <span className="font-bold">{order.note}</span>
-                   </div>
-               )}
-
-               {/* Total Ingredients Toggle */}
-               {aggregatedIngredients.length > 0 && (
-                   <div className="mb-3">
-                       <button 
-                         onClick={() => toggleIngredients(order.id)}
-                         className="w-full flex items-center justify-between p-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600 text-xs font-bold transition-colors"
-                       >
-                           <span className="flex items-center gap-1"><List size={14}/> วัตถุดิบรวม ({aggregatedIngredients.length})</span>
-                           {isIngredientsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                       </button>
-                       {isIngredientsExpanded && (
-                           <div className="mt-1 p-3 bg-white rounded-lg text-xs border border-stone-200 animate-in fade-in zoom-in-95 duration-200 shadow-inner">
-                               
-                               {/* Sort Toggle Controls */}
-                               <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-2">
-                                  <span className="text-[10px] font-bold text-stone-400 flex items-center gap-1">
-                                     <ArrowUpDown size={10} /> เรียงลำดับ (Sort)
-                                  </span>
-                                  <div className="flex gap-1">
-                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); setIngredientSortMode('QTY'); }}
-                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border transition-colors ${ingredientSortMode === 'QTY' ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
-                                     >
-                                        <ArrowDown01 size={10} /> จำนวน
-                                     </button>
-                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); setIngredientSortMode('NAME'); }}
-                                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] border transition-colors ${ingredientSortMode === 'NAME' ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-500 border-stone-200 hover:bg-stone-50'}`}
-                                     >
-                                        <ArrowDownAZ size={10} /> ชื่อ
-                                     </button>
-                                  </div>
-                               </div>
-
-                               {['เนื้อสัตว์', 'ผัก', 'ไวน์', 'ของแห้ง/อื่นๆ'].map(cat => {
-                                   const catItems = aggregatedIngredients.filter(i => i.category === cat);
-                                   if (catItems.length === 0) return null;
-                                   
-                                   let headerColor = 'text-stone-500';
-                                   if (cat === 'เนื้อสัตว์') headerColor = 'text-red-600';
-                                   if (cat === 'ผัก') headerColor = 'text-green-600';
-                                   if (cat === 'ไวน์') headerColor = 'text-purple-600';
-
-                                   return (
-                                       <div key={cat} className="mb-2 last:mb-0">
-                                           <div className={`font-bold ${headerColor} mb-1 border-b border-stone-100 pb-0.5`}>{cat}</div>
-                                           <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                                                {catItems.map(({name, qty}, i) => (
-                                                    <div key={i} className="flex justify-between">
-                                                        <span className="text-stone-600">{name}</span>
-                                                        <span className={`font-bold ${qty > 1 ? 'text-red-700 text-base' : 'text-stone-800'}`}>x{qty}</span>
-                                                    </div>
-                                                ))}
-                                           </div>
-                                       </div>
-                                   );
-                               })}
-                           </div>
-                       )}
-                   </div>
-               )}
-
-               {/* Render Order Items (Grouped) */}
-               <div className="space-y-2 mb-4 border-t border-b border-stone-100 py-3">
-                   {renderOrderItems(order)}
-               </div>
-
-               {/* Staff Info */}
-               {(order.chefName || order.serverName) && (
-                 <div className="flex gap-2 mb-3 text-[10px] text-stone-500">
-                    {order.chefName && <span className="bg-orange-50 text-orange-700 px-2 py-1 rounded border border-orange-100">Chef: {order.chefName}</span>}
-                    {order.serverName && <span className="bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100">Server: {order.serverName}</span>}
-                 </div>
-               )}
-
-               {nextStatus && (
-                 <button 
-                   onClick={() => updateOrderStatus(order.id, nextStatus, currentUser?.name)}
-                   disabled={isRestricted}
-                   className={`w-full py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors
-                     ${isRestricted
-                       ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                       : isAlert 
-                          ? 'bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200' 
-                          : 'bg-stone-800 text-white hover:bg-black'}`}
-                 >
-                   <span>{isRestricted ? `${actionLabel} (Locked)` : actionLabel}</span>
-                   {!isRestricted && <ArrowRight size={14} />}
-                 </button>
-               )}
-            </div>
-          )})}
-          {items.length === 0 && (
-             <div className="text-center py-10 text-stone-300 text-sm">ไม่มีรายการ</div>
-          )}
-        </div>
-      </div>
-    );
-};
-
-export const KitchenView: React.FC = () => {
-  const { orders, updateOrderStatus, toggleItemCookedStatus, cancelOrder, tables, currentUser, menu, inventory } = useStore();
+export const Layout: React.FC = () => {
+  const { currentUser, logout, storeSession, openStore, closeStore, orders, menu, inventory, isCloudMode } = useStore();
+  const location = useLocation();
+  const navigate = useNavigate();
   
-  // Safe filtering
-  const safeOrders = Array.isArray(orders) ? orders : [];
+  const [showOpenModal, setShowOpenModal] = useState(false);
+  const [dailyMenu, setDailyMenu] = useState<MenuItem[]>([]);
+  const [menuSearch, setMenuSearch] = useState('');
+  
+  // NEW: Filter states for easier menu selection
+  const [activeCategoryTab, setActiveCategoryTab] = useState<string>('All');
+  const [showThaiOnly, setShowThaiOnly] = useState(true); // Default to true to hide "other shop" items
 
-  // Sort Orders: Oldest First (Time Ascending)
-  // User request: "Number Time Order Max to Min" -> usually implies sorting by time.
-  // Standard KDS uses Oldest First (FIFO) so chefs cook order that came first.
-  const sortOrders = (os: Order[]) => {
-      return os.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  // Determine active tab from URL
+  const currentPath = location.pathname.split('/')[1] || 'floorplan';
+
+  // Calculate notifications
+  const pendingOrders = orders.filter(o => o.status === OrderStatus.PENDING).length;
+  const servingOrders = orders.filter(o => o.status === OrderStatus.SERVING).length;
+
+  // --- PERMISSION LOGIC ---
+  const pos = currentUser?.position || '';
+  
+  // 1. Can Open/Close Store: Admin, Co-CEO, CEO, Manager, Fulltime (NOT Parttime)
+  const canOperateStore = ['Admin', 'Co-CEO', 'CEO', 'Manager', 'Fulltime'].includes(pos);
+
+  useEffect(() => {
+    if (showOpenModal) {
+      setDailyMenu(menu.map(m => ({ 
+        ...m, 
+        dailyStock: 0, 
+        isAvailable: false 
+      })));
+    }
+  }, [showOpenModal, menu]);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
   };
 
-  const pendingOrders = sortOrders(safeOrders.filter(o => o.status === OrderStatus.PENDING));
-  const cookingOrders = sortOrders(safeOrders.filter(o => o.status === OrderStatus.COOKING));
-  const servingOrders = sortOrders(safeOrders.filter(o => o.status === OrderStatus.SERVING));
+  const handleOpenStoreClick = () => {
+    setShowOpenModal(true);
+  };
+
+  const handleConfirmOpen = () => {
+    const hasAvailableItems = dailyMenu.some(item => item.isAvailable);
+    if (!hasAvailableItems) {
+      alert("ไม่สามารถเปิดร้านได้: กรุณากำหนดเมนูที่พร้อมขายอย่างน้อย 1 รายการ");
+      return;
+    }
+    openStore(dailyMenu, currentUser?.name || 'Unknown');
+    setShowOpenModal(false);
+  };
+  
+  const handleCloseStore = () => {
+      if(confirm("ยืนยันการปิดร้านประจำวัน?")) {
+          closeStore(currentUser?.name || 'Unknown');
+      }
+  };
+
+  const updateDailyItem = (id: string, updates: Partial<MenuItem>) => {
+    setDailyMenu(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  // Helper to calculate max portions based on inventory
+  // IMPROVED: Logic for "Smart Average" (Fair Share)
+  const getMaxPossibleStock = (item: MenuItem) => {
+    if (!item.ingredients || item.ingredients.length === 0) return 999;
+    
+    let limitingFactor = 9999;
+    
+    item.ingredients.forEach(ingName => {
+        const invItem = inventory.find(i => i.name === ingName);
+        if (invItem) {
+            // How many active menus share this ingredient?
+            // (Include current item in count if it's marked available, or if we are actively configuring it)
+            // Note: In this modal logic, we use dailyMenu state.
+            const sharedCount = dailyMenu.filter(m => 
+                m.isAvailable && m.ingredients.includes(ingName)
+            ).length;
+
+            // If this item is not yet enabled but we are asking "what if", treat count as at least 1 (itself)
+            // But if it IS enabled, it's already in the count.
+            // Safe divisor: max(1, count)
+            
+            // To be fair, if there are 3 active items using Chicken, and Total Chicken is 30.
+            // Each gets 10.
+            
+            const divisor = Math.max(1, sharedCount);
+            const limitForThisIngredient = Math.floor(invItem.quantity / divisor);
+            
+            if (limitForThisIngredient < limitingFactor) {
+                limitingFactor = limitForThisIngredient;
+            }
+        } else {
+            // Missing ingredient entirely
+            limitingFactor = 0;
+        }
+    });
+
+    return limitingFactor;
+  };
+
+  const updateStockQuantity = (id: string, delta: number) => {
+    setDailyMenu(prev => {
+        // We need to calculate based on the PREVIOUS state because availability changes affect max possible
+        const targetItem = prev.find(i => i.id === id);
+        if(!targetItem) return prev;
+
+        const nextState = prev.map(item => {
+           if (item.id !== id) return item;
+
+           let currentMax = 9999;
+           // Inline calculation using 'prev' state
+           if (item.ingredients && item.ingredients.length > 0) {
+              item.ingredients.forEach(ingName => {
+                 const invItem = inventory.find(i => i.name === ingName);
+                 if(invItem) {
+                    const sharedCount = prev.filter(m => m.isAvailable && m.ingredients.includes(ingName)).length;
+                    
+                    const effectiveCount = item.isAvailable ? sharedCount : sharedCount + 1;
+                    const limit = Math.floor(invItem.quantity / effectiveCount);
+                    if(limit < currentMax) currentMax = limit;
+                 } else {
+                    currentMax = 0;
+                 }
+              });
+           } else {
+              currentMax = 999;
+           }
+
+           const currentStock = item.dailyStock === -1 ? 0 : item.dailyStock;
+           let newStock = currentStock + delta;
+           if (newStock < 0) newStock = 0;
+           if (delta > 0 && newStock > currentMax) newStock = currentMax;
+           
+           const newAvailability = newStock > 0;
+           return { ...item, dailyStock: newStock, isAvailable: newAvailability };
+        });
+        
+        return nextState;
+    });
+  };
+
+  // Define Menus with custom permission checks
+  const operationMenu = [
+    { id: 'floorplan', label: 'ผังร้าน (Floor)', icon: Armchair, badge: servingOrders },
+    { id: 'kitchen', label: 'งานครัว (Kitchen)', icon: ChefHat, badge: pendingOrders },
+    { id: 'history', label: 'ประวัติ (History)', icon: History },
+    { id: 'inventory', label: 'ตู้เย็น (Stock)', icon: Refrigerator }, 
+    { id: 'admin', label: 'คำนวณวัตถุดิบ', icon: Calculator },
+  ];
+
+  const managementMenu = [
+    { id: 'menu', label: 'จัดการเมนู', icon: Coffee },
+    { id: 'staff', label: 'พนักงาน', icon: Users },
+  ];
+
+  const categories = ['Main Dish', 'Appetizer', 'Soup', 'Drink', 'Set', 'Other'];
+
+  const renderMenuItem = (item: any) => {
+    const isActive = currentPath === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => navigate(`/${item.id}`)}
+        className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl transition-all duration-200 group relative overflow-hidden ${
+          isActive
+            ? 'bg-red-800 text-amber-400 shadow-inner font-bold' 
+            : 'text-red-100/80 hover:bg-red-900/50 hover:text-white'
+        }`}
+      >
+        <div className="flex items-center gap-3 relative z-10">
+          <item.icon size={20} className={`${isActive ? 'text-amber-400' : 'text-red-300 group-hover:text-white'} transition-colors`} />
+          <span className="text-sm tracking-wide">{item.label}</span>
+        </div>
+        
+        {/* Notification Badge */}
+        {item.badge > 0 && (
+          <div className="relative z-10">
+             <span className="flex h-6 min-w-[24px] items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold px-1.5 border border-red-400 animate-pulse shadow-sm">
+               {item.badge}
+             </span>
+          </div>
+        )}
+      </button>
+    );
+  };
+
+  const canManage = currentUser?.role === Role.OWNER;
+  const isMenuReady = dailyMenu.some(m => m.isAvailable);
+
+  // Helper to detect Thai characters (Triad Menu) vs English (Other Shop)
+  // FALLBACK if source is not set.
+  const isThai = (text: string) => /[ก-๙]/.test(text);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex justify-between items-center mb-4">
-          <h2 className="text-3xl font-bold text-stone-800 flex items-center gap-2">
-            <ChefHat className="text-red-600" /> งานครัวและบริการ (KDS)
-          </h2>
-          <div className="text-xs text-stone-400 font-mono">Sorted by Time (Oldest First)</div>
-      </div>
+    <div className="flex h-screen bg-[#F5F5F4] overflow-hidden">
+      <aside className="w-64 bg-gradient-to-b from-red-900 to-red-950 text-white flex flex-col shadow-xl relative z-20">
+        {/* Brand Header */}
+        <div className="p-6 border-b border-red-800/50">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center shadow-lg text-red-900">
+               <Crown size={24} strokeWidth={2.5} />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-amber-400 tracking-wide font-heading leading-none">Triad Restaurant</h1>
+              <p className="text-[10px] text-red-200 tracking-[0.2em] font-medium mt-1">BY LI GROUP</p>
+            </div>
+          </div>
+          
+          {/* Cloud Status Indicator */}
+          <div className={`mt-4 flex items-center gap-2 text-xs px-2 py-1 rounded border ${isCloudMode ? 'bg-green-900/30 border-green-800 text-green-300' : 'bg-stone-900/30 border-stone-700 text-stone-400'}`}>
+             {isCloudMode ? <Cloud size={12} /> : <CloudOff size={12} />}
+             <span>{isCloudMode ? 'Cloud Online' : 'Local Mode'}</span>
+          </div>
+        </div>
 
-      {/* Alert Banner */}
-      {pendingOrders.length > 0 && (
-        <div className="bg-red-600 rounded-xl p-3 mb-4 text-white shadow-lg shadow-red-200 flex items-center justify-between animate-pulse">
-           <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/20 rounded-full"><AlertTriangle size={24} /></div>
-              <div>
-                <div className="font-bold text-lg">มีออเดอร์รอทำ {pendingOrders.length} รายการ</div>
-                <div className="text-red-100 text-xs">กรุณารับออเดอร์และเริ่มปรุงอาหารทันที</div>
+        {/* Store Status */}
+        <div className="px-6 py-4 bg-red-950/30">
+            <div className="flex flex-col gap-2 p-3 bg-red-900/40 rounded-lg border border-red-800/50">
+               <div className="flex items-center justify-between">
+                 <div className="flex items-center gap-2">
+                   <div className={`w-2 h-2 rounded-full ${storeSession.isOpen ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-red-500'}`}></div>
+                   <span className="text-xs text-red-100 font-medium tracking-wide">{storeSession.isOpen ? 'OPEN' : 'CLOSED'}</span>
+                 </div>
+                 {canOperateStore && (
+                   <button 
+                    onClick={storeSession.isOpen ? handleCloseStore : handleOpenStoreClick}
+                    className={`text-[10px] font-bold px-3 py-1 rounded transition-colors tracking-wider ${storeSession.isOpen ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-green-700 text-white'}`}
+                   >
+                     {storeSession.isOpen ? 'CLOSE' : 'OPEN'}
+                   </button>
+                 )}
+               </div>
+               {storeSession.isOpen && (
+                 <div className="flex items-center gap-1.5 text-[10px] text-red-300">
+                    <Clock size={10} />
+                    <span>Opened: {storeSession.openedAt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                 </div>
+               )}
+            </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
+            <div>
+              <h3 className="px-4 text-[10px] font-bold text-red-400 uppercase tracking-wider mb-2">Operation</h3>
+              <div className="space-y-1">
+                {operationMenu.map(renderMenuItem)}
               </div>
+            </div>
+
+            {canManage && (
+              <div>
+                <h3 className="px-4 text-[10px] font-bold text-red-400 uppercase tracking-wider mb-2">Management</h3>
+                <div className="space-y-1">
+                  {managementMenu.map(renderMenuItem)}
+                </div>
+              </div>
+            )}
+        </nav>
+
+        {/* User Profile */}
+        <div className="p-4 bg-red-950 border-t border-red-900">
+          <div className="flex items-center gap-3 mb-3 px-2">
+            <div className="w-8 h-8 rounded-full bg-amber-500 border-2 border-amber-600 flex items-center justify-center text-red-900 font-bold text-sm">
+              {currentUser?.name.charAt(0)}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-bold text-white truncate">{currentUser?.name}</p>
+              <p className="text-[10px] text-red-300 uppercase tracking-wider">{currentUser?.position}</p>
+            </div>
+          </div>
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 bg-red-900/50 hover:bg-red-800 text-red-200 hover:text-white py-2 rounded-lg transition-colors text-xs font-medium border border-red-800"
+          >
+            <LogOut size={14} />
+            ลงชื่อออก
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-auto p-6 relative bg-stone-100">
+        {!storeSession.isOpen && currentPath !== 'admin' && currentPath !== 'menu' && currentPath !== 'staff' && currentPath !== 'inventory' && currentPath !== 'history' ? (
+           <div className="absolute inset-0 flex flex-col items-center justify-center bg-stone-200/90 backdrop-blur-sm z-10">
+             <div className="bg-white p-10 rounded-2xl shadow-2xl text-center border-t-4 border-red-600 max-w-sm">
+                <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600">
+                  <Crown size={32} />
+                </div>
+                <h2 className="text-2xl font-bold text-stone-800 mb-2 font-heading">ร้านยังไม่เปิด</h2>
+                <p className="text-stone-500 text-sm">กรุณาให้ผู้จัดการหรือ Fulltime เปิดร้าน<br/>เพื่อเริ่มระบบรับออเดอร์</p>
+             </div>
            </div>
-           <div className="px-4 py-1 bg-white text-red-700 font-bold rounded-full text-sm">Action Required</div>
+        ) : (
+          <div className="max-w-7xl mx-auto animate-fade-in pb-10">
+            <Outlet />
+          </div>
+        )}
+      </main>
+
+      {/* Daily Menu Setup Modal */}
+      {showOpenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/80 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 bg-red-900 text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Coffee /> ตั้งค่าเมนูประจำวัน
+                </h2>
+                <p className="text-red-200 text-sm mt-1">ระบบจะคำนวณเฉลี่ยกับเมนูอื่นที่ใช้ร่วมกัน (Smart Max)</p>
+              </div>
+              <button onClick={() => setShowOpenModal(false)} className="bg-white/10 p-2 rounded-full hover:bg-white/20 transition-colors">
+                <X />
+              </button>
+            </div>
+            
+            {/* Toolbar & Filters */}
+            <div className="p-4 bg-stone-50 border-b border-stone-200 space-y-4">
+               <div className="flex gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
+                    <input 
+                      type="text" 
+                      placeholder="ค้นหาเมนู..." 
+                      value={menuSearch} 
+                      onChange={e => setMenuSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-stone-300 rounded-lg outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+                  {/* Thai Language Filter Toggle */}
+                  <button 
+                    onClick={() => setShowThaiOnly(!showThaiOnly)}
+                    className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 border transition-all ${showThaiOnly ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-white text-stone-500 border-stone-300 hover:bg-stone-100'}`}
+                  >
+                     {showThaiOnly ? <Store size={16} /> : <Globe size={16} />}
+                     {showThaiOnly ? 'เฉพาะเมนูร้าน Triad' : 'แสดงทุกร้าน (All Shops)'}
+                  </button>
+               </div>
+               
+               {/* Category Tabs */}
+               <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  <button
+                     onClick={() => setActiveCategoryTab('All')}
+                     className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-all border ${activeCategoryTab === 'All' ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                  >
+                     ทั้งหมด (All)
+                  </button>
+                  {categories.map(cat => (
+                     <button
+                        key={cat}
+                        onClick={() => setActiveCategoryTab(cat)}
+                        className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-all border ${activeCategoryTab === cat ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                     >
+                        {cat}
+                     </button>
+                  ))}
+               </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 bg-stone-100/50">
+               {categories.map(category => {
+                 // Skip category if not active
+                 if (activeCategoryTab !== 'All' && activeCategoryTab !== category) return null;
+
+                 let categoryItems = dailyMenu.filter(m => 
+                   m.category === category &&
+                   m.name.toLowerCase().includes(menuSearch.toLowerCase())
+                 );
+                 
+                 // Apply Thai/Triad Filter
+                 if (showThaiOnly) {
+                     // Prefer Source field if exists, otherwise fallback to Thai check
+                     categoryItems = categoryItems.filter(m => m.source ? m.source === 'TRIAD' : isThai(m.name));
+                 }
+                 
+                 if (categoryItems.length === 0) return null;
+
+                 return (
+                   <div key={category} className="mb-8 animate-in slide-in-from-bottom-2 duration-300">
+                     <h3 className="font-bold text-lg text-stone-700 mb-3 flex items-center gap-2">
+                        <span className={`w-1.5 h-6 rounded-full ${category === 'Main Dish' ? 'bg-red-500' : 'bg-stone-400'}`}></span>
+                        {category} <span className="text-xs text-stone-400 font-normal">({categoryItems.length})</span>
+                     </h3>
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                       {categoryItems.map(item => {
+                         const maxPossible = getMaxPossibleStock(item);
+                         const isStockLow = maxPossible < 5;
+                         
+                         // Visual Style based on Shop Source
+                         const isTriad = item.source ? item.source === 'TRIAD' : isThai(item.name);
+                         
+                         return (
+                         <div 
+                           key={item.id} 
+                           className={`p-4 rounded-xl border-2 transition-all shadow-sm ${
+                             item.isAvailable 
+                               ? (isTriad ? 'border-amber-400 bg-amber-50/10 ring-1 ring-amber-100/50' : 'border-stone-300 bg-white') 
+                               : (isTriad ? 'border-stone-200 bg-white' : 'border-stone-100 bg-stone-50 opacity-60 grayscale-[0.5] hover:opacity-100 hover:grayscale-0')
+                           }`}
+                         >
+                            <div className="flex justify-between items-start mb-3">
+                               <div className="flex-1 min-w-0 pr-2">
+                                  <div className={`font-bold line-clamp-2 ${item.isAvailable ? 'text-stone-800' : 'text-stone-500'}`} style={{minHeight: '40px'}}>{item.name}</div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-[10px] text-stone-400 uppercase tracking-wide">{item.category}</span>
+                                    {!isTriad && <span className="text-[10px] bg-stone-200 text-stone-500 px-1 rounded">Other</span>}
+                                  </div>
+                               </div>
+                               <button 
+                                 onClick={() => {
+                                     const willBeAvailable = !item.isAvailable;
+                                     if(willBeAvailable && maxPossible === 0) {
+                                         alert("วัตถุดิบหมด! ไม่สามารถเปิดขายได้");
+                                         return;
+                                     }
+                                     updateDailyItem(item.id, { isAvailable: willBeAvailable });
+                                 }}
+                                 className={`px-3 py-1 rounded-full text-xs font-bold transition-colors shrink-0 ${item.isAvailable ? 'bg-green-100 text-green-700' : 'bg-stone-200 text-stone-500'}`}
+                               >
+                                 {item.isAvailable ? 'พร้อมขาย' : 'ปิด'}
+                               </button>
+                            </div>
+                            
+                            <div className={`p-3 rounded-lg border ${item.isAvailable ? 'bg-white border-stone-200' : 'bg-transparent border-transparent'}`}>
+                              <div className="flex items-center justify-between mb-2">
+                                 <span className="text-xs font-medium text-stone-500 flex items-center gap-1">
+                                    จำนวนขาย
+                                    {isStockLow && <span className="text-[10px] text-red-500 font-bold bg-red-50 px-1 rounded">Low</span>}
+                                 </span>
+                                 <span className="text-xs text-stone-400 whitespace-nowrap font-bold">
+                                   Max: {maxPossible}
+                                 </span>
+                              </div>
+                              
+                              <div className="flex items-center gap-3">
+                                  <div className="flex items-center bg-white rounded-lg border border-stone-300 flex-1 overflow-hidden h-9 shadow-sm">
+                                      <button 
+                                        onClick={() => updateStockQuantity(item.id, -1)}
+                                        className="w-8 h-full flex items-center justify-center text-stone-500 hover:text-red-600 hover:bg-red-50 transition-colors border-r border-stone-200"
+                                      >
+                                        <Minus size={14} strokeWidth={2.5} />
+                                      </button>
+                                      
+                                      <input 
+                                        type="number" 
+                                        value={item.dailyStock === 0 ? '' : item.dailyStock}
+                                        placeholder="0"
+                                        onChange={(e) => {
+                                          const valStr = e.target.value;
+                                          if (valStr === '' || valStr === '0') {
+                                            updateDailyItem(item.id, { dailyStock: 0, isAvailable: false });
+                                          } else {
+                                            let val = parseInt(valStr);
+                                            if (val > maxPossible) val = maxPossible;
+                                            updateDailyItem(item.id, { dailyStock: val, isAvailable: true });
+                                          }
+                                        }}
+                                        className="w-full text-center outline-none text-sm font-bold bg-transparent no-spinner text-stone-800 placeholder-stone-300"
+                                      />
+
+                                      <button 
+                                        onClick={() => updateStockQuantity(item.id, 1)}
+                                        disabled={item.dailyStock >= maxPossible}
+                                        className="w-8 h-full flex items-center justify-center text-stone-500 hover:text-green-600 hover:bg-green-50 transition-colors border-l border-stone-200 disabled:bg-stone-100 disabled:text-stone-300"
+                                      >
+                                        <Plus size={14} strokeWidth={2.5} />
+                                      </button>
+                                  </div>
+                                  
+                                  <button
+                                    onClick={() => {
+                                        if (maxPossible > 0) {
+                                            updateDailyItem(item.id, { dailyStock: maxPossible, isAvailable: true });
+                                        } else {
+                                            alert("วัตถุดิบหมด!");
+                                        }
+                                    }}
+                                    className={`h-9 px-2 flex items-center justify-center gap-1 rounded-lg border transition-colors shadow-sm font-bold text-[10px] ${item.dailyStock === maxPossible ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-stone-300 text-stone-500 hover:bg-stone-50'}`}
+                                    title="Set to Smart Limit"
+                                  >
+                                    <ArrowUpToLine size={14} /> MAX
+                                  </button>
+                              </div>
+                            </div>
+                         </div>
+                       );
+                       })}
+                     </div>
+                   </div>
+                 );
+               })}
+               
+               {dailyMenu.filter(m => (activeCategoryTab === 'All' || m.category === activeCategoryTab) && m.name.toLowerCase().includes(menuSearch.toLowerCase())).length === 0 && (
+                 <div className="text-center p-12 text-stone-400 flex flex-col items-center">
+                    <Filter size={48} className="opacity-20 mb-2" />
+                    <p>ไม่พบเมนูในหมวดนี้</p>
+                    {showThaiOnly && <p className="text-xs mt-1">(ลองปิดตัวกรอง 'เฉพาะเมนูร้าน Triad' เพื่อดูรายการทั้งหมด)</p>}
+                 </div>
+               )}
+            </div>
+
+            <div className="p-6 bg-white border-t border-stone-200 flex justify-between items-center shadow-lg z-20">
+               <div className="text-sm">
+                 {!isMenuReady && (
+                   <span className="flex items-center gap-2 text-red-500 font-bold bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 animate-pulse">
+                     <AlertCircle size={16} /> กรุณาเลือกเมนูที่พร้อมขายอย่างน้อย 1 รายการ
+                   </span>
+                 )}
+               </div>
+               <div className="flex gap-3">
+                  <button onClick={() => setShowOpenModal(false)} className="px-6 py-3 rounded-xl border border-stone-300 text-stone-600 font-bold hover:bg-stone-50 transition-colors">
+                    ยกเลิก
+                  </button>
+                  <button 
+                    onClick={handleConfirmOpen}
+                    disabled={!isMenuReady} 
+                    className={`px-6 py-3 rounded-xl text-white font-bold flex items-center gap-2 shadow-lg transition-all ${isMenuReady ? 'bg-green-600 hover:bg-green-700 shadow-green-600/20' : 'bg-stone-300 cursor-not-allowed shadow-none'}`}
+                  >
+                    <Check size={20} />
+                    ยืนยันเปิดร้าน
+                  </button>
+               </div>
+            </div>
+          </div>
         </div>
       )}
-
-      <div className="flex-1 grid grid-cols-3 gap-4 min-h-0">
-        <KanbanColumn 
-          title="รอทำ (Ordered)" 
-          items={pendingOrders}
-          icon={AlertCircle}
-          colorClass="bg-red-500"
-          isAlert={true}
-          nextStatus={OrderStatus.COOKING}
-          actionLabel="เริ่มทำ (Start)"
-          currentUser={currentUser}
-          updateOrderStatus={updateOrderStatus}
-          cancelOrder={cancelOrder}
-          tables={tables}
-          menu={menu}
-          inventory={inventory}
-        />
-        <KanbanColumn 
-          title="กำลังทำ (Cooking)" 
-          items={cookingOrders}
-          icon={Flame}
-          colorClass="bg-orange-500"
-          nextStatus={OrderStatus.SERVING}
-          actionLabel="พร้อมเสิร์ฟ (Ready)"
-          currentUser={currentUser}
-          updateOrderStatus={updateOrderStatus}
-          toggleItemCookedStatus={toggleItemCookedStatus}
-          cancelOrder={cancelOrder}
-          tables={tables}
-          menu={menu}
-          inventory={inventory}
-        />
-        <KanbanColumn 
-          title="รอเสิร์ฟ (Serving)" 
-          items={servingOrders}
-          icon={User}
-          colorClass="bg-green-500"
-          nextStatus={OrderStatus.SERVED}
-          actionLabel="เสิร์ฟแล้ว (Served)"
-          currentUser={currentUser}
-          updateOrderStatus={updateOrderStatus}
-          cancelOrder={cancelOrder}
-          tables={tables}
-          menu={menu}
-          inventory={inventory}
-        />
-      </div>
     </div>
   );
 };
