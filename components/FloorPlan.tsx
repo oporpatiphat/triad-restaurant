@@ -38,7 +38,7 @@ export const FloorPlan: React.FC = () => {
   const mainActiveOrder = tableActiveOrders.length > 0 ? tableActiveOrders[0] : null;
   const isWaitingPayment = tableActiveOrders.some(o => o.status === OrderStatus.WAITING_PAYMENT);
 
-  // Combine items for display in the summary
+  // Combine items for display in the summary (SORTED by Category then Custom Order)
   const aggregatedItems = useMemo(() => {
      const allItems: { item: OrderItem, orderId: string, status: OrderStatus, isStaffMeal?: boolean }[] = [];
      tableActiveOrders.forEach(order => {
@@ -46,8 +46,35 @@ export const FloorPlan: React.FC = () => {
              allItems.push({ item, orderId: order.id, status: order.status, isStaffMeal: order.isStaffMeal });
          });
      });
-     return allItems;
-  }, [tableActiveOrders]);
+
+     // SORT LOGIC
+     return allItems.sort((a, b) => {
+        const menuA = menu.find(m => m.id === a.item.menuItemId);
+        const menuB = menu.find(m => m.id === b.item.menuItemId);
+        
+        if (!menuA || !menuB) return 0;
+
+        // 1. Sort by Category Priority
+        const catOrder = ['Main Dish', 'Appetizer', 'Soup', 'Drink', 'Set', 'Other'];
+        const idxA = catOrder.indexOf(menuA.category);
+        const idxB = catOrder.indexOf(menuB.category);
+        
+        if (idxA !== -1 && idxB !== -1 && idxA !== idxB) {
+            return idxA - idxB;
+        }
+
+        // 2. Sort by Custom SortOrder (from Menu Management)
+        const sortA = menuA.sortOrder !== undefined ? menuA.sortOrder : 9999;
+        const sortB = menuB.sortOrder !== undefined ? menuB.sortOrder : 9999;
+        
+        if (sortA !== sortB) {
+            return sortA - sortB;
+        }
+
+        // 3. Fallback to Name
+        return menuA.name.localeCompare(menuB.name);
+     });
+  }, [tableActiveOrders, menu]);
 
   const aggregatedTotal = useMemo(() => {
       return tableActiveOrders.reduce((sum, o) => sum + o.totalAmount, 0);

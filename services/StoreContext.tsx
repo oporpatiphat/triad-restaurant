@@ -19,8 +19,8 @@ interface StoreContextType {
   createOrder: (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, bagCount: number, note?: string, isStaffMeal?: boolean) => Promise<boolean>;
   addItemsToOrder: (tableId: string, newItems: OrderItem[], boxCount: number, bagCount: number, note?: string, isStaffMeal?: boolean) => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: OrderStatus, actorName?: string, paymentMethod?: 'CASH' | 'CARD') => void;
-  requestCheckBill: (tableId: string) => Promise<void>; // New: Check bill for entire table
-  settleTableBill: (tableId: string, paymentMethod: 'CASH' | 'CARD') => Promise<void>; // New: Settle entire table
+  requestCheckBill: (tableId: string) => Promise<void>; 
+  settleTableBill: (tableId: string, paymentMethod: 'CASH' | 'CARD') => Promise<void>; 
   toggleItemCookedStatus: (orderId: string, itemIndex: number) => void; 
   cancelOrder: (orderId: string, reason?: string) => void; 
   deleteOrder: (orderId: string) => void; 
@@ -30,7 +30,7 @@ interface StoreContextType {
   deleteMenuItem: (itemId: string) => void;
   toggleMenuAvailability: (itemId: string) => void;
   updateMenuStock: (itemId: string, quantity: number) => void;
-  reorderMenuItem: (itemId: string, direction: 'up' | 'down') => void; // NEW: Reorder
+  reorderMenuItem: (itemId: string, direction: 'up' | 'down') => void;
   inventory: Ingredient[];
   updateIngredientQuantity: (itemId: string, delta: number) => void;
   addIngredient: (ingredient: Ingredient) => void;
@@ -202,7 +202,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // ... (Cloud Initialization code same as before) ...
   const initializeCloudData = async () => {
       if (!isCloudMode || !db) return;
       try {
@@ -262,7 +261,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
   };
 
-  // ... (Cloud Listeners same as before) ...
   useEffect(() => {
     if (!isCloudMode || !db) return;
     initializeCloudData();
@@ -312,7 +310,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, [isCloudMode]);
 
-  // ... (Standard Actions same as before) ...
   const resetSystem = () => {
     if (confirm("คุณแน่ใจหรือไม่ที่จะรีเซ็ตข้อมูลทั้งหมด?")) {
       if (isCloudMode && db) {
@@ -459,14 +456,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // --- createOrder: Creates the FIRST order for a table ---
   const createOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, bagCount: number, note?: string, isStaffMeal?: boolean): Promise<boolean> => {
     return createOrAppendOrder(tableId, customerName, customerClass, items, boxCount, bagCount, note, isStaffMeal, true);
   };
 
-  // --- addItemsToOrder: Creates a separate order doc ---
   const addItemsToOrder = async (tableId: string, newItems: OrderItem[], boxCount: number, bagCount: number, note?: string, isStaffMeal?: boolean): Promise<boolean> => {
-      // Find existing active orders to get customer info
       const activeOrder = orders.find(o => o.tableId === tableId && o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED);
       const cName = activeOrder?.customerName || 'Unknown';
       const cClass = activeOrder?.customerClass || CustomerClass.MIDDLE;
@@ -474,15 +468,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       return createOrAppendOrder(tableId, cName, cClass, newItems, boxCount, bagCount, note, isStaffMeal, false);
   };
 
-  // Shared Logic for creating an order document
   const createOrAppendOrder = async (tableId: string, customerName: string, customerClass: CustomerClass, items: OrderItem[], boxCount: number, bagCount: number, note: string | undefined, isStaffMeal: boolean | undefined, isFirstOrder: boolean): Promise<boolean> => {
     try {
         const boxFee = (boxCount || 0) * 100;
-        // IF Staff Meal, Total is 0, but stocks are still deducted
         const totalAmount = isStaffMeal ? 0 : items.reduce((sum, i) => sum + (i.price * i.quantity), 0) + boxFee;
 
-        // Inventory & Menu Stock Check Logic (Shared)
-        
         if (isCloudMode && db) {
             await runTransaction(db, async (transaction) => {
                 const tableRef = doc(db!, 'tables', tableId);
@@ -521,7 +511,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }
                 });
 
-                // Create NEW Order Document
                 const newOrder: Order = {
                     id: `ord-${Date.now()}`,
                     tableId,
@@ -534,7 +523,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     boxCount: boxCount,
                     bagCount: bagCount,
                     note: note || '',
-                    isStaffMeal: !!isStaffMeal // Save Flag
+                    isStaffMeal: !!isStaffMeal
                 };
 
                 transaction.set(doc(db!, 'orders', newOrder.id), newOrder);
@@ -543,7 +532,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     transaction.update(tableRef, { status: TableStatus.OCCUPIED, currentOrderId: newOrder.id });
                 }
 
-                // Deduct Stocks
                 menuDocs.forEach((mDoc, idx) => {
                     const mData = mDoc.data() as MenuItem;
                     const orderQty = items[idx].quantity;
@@ -559,7 +547,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             });
             return true;
         } else {
-            // Local Mode
             const newOrder: Order = {
                 id: `ord-${Date.now()}`,
                 tableId,
@@ -597,7 +584,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (status === OrderStatus.COMPLETED && paymentMethod) updates.paymentMethod = paymentMethod;
 
     if (isCloudMode && db) {
-        // Simple update for single order (Kitchen flow)
         await updateDoc(doc(db!, 'orders', orderId), updates);
     } else {
         setOrders(prev => {
@@ -608,7 +594,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // --- NEW: Request Check Bill (Updates ALL active orders for table) ---
   const requestCheckBill = async (tableId: string) => {
       const activeOrders = orders.filter(o => o.tableId === tableId && o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED);
       if (activeOrders.length === 0) return;
@@ -632,7 +617,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
   };
 
-  // --- NEW: Settle Table Bill (Completes ALL active orders & Frees Table) ---
   const settleTableBill = async (tableId: string, paymentMethod: 'CASH' | 'CARD') => {
       const activeOrders = orders.filter(o => o.tableId === tableId && o.status !== OrderStatus.COMPLETED && o.status !== OrderStatus.CANCELLED);
       
@@ -644,7 +628,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   paymentMethod: paymentMethod 
               });
           });
-          // Free the table
           batch.update(doc(db!, 'tables', tableId), { status: TableStatus.AVAILABLE, currentOrderId: null });
           await batch.commit();
       } else {
@@ -686,12 +669,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // UPDATED: Cancel Order - Only free table if NO other active orders exist
   const cancelOrder = async (orderId: string) => {
       const orderToCancel = orders.find(o => o.id === orderId);
-      if (!orderToCancel && !isCloudMode) return; // Local guard
+      if (!orderToCancel && !isCloudMode) return; 
 
-      // Identify if this is the last active order for the table
       const otherActiveOrders = orders.filter(o => 
           o.tableId === orderToCancel?.tableId && 
           o.id !== orderId && 
@@ -703,19 +684,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (isCloudMode && db) {
           try {
               await runTransaction(db, async (transaction) => {
-                  // ... (Inventory Restoration Logic similar to before) ...
-                  // To keep code concise, assume inventory restoration logic is here (same as previous implementation)
-                  
-                  // 1. Get Order
                   const orderRef = doc(db!, 'orders', orderId);
                   const orderDoc = await transaction.get(orderRef);
                   if (!orderDoc.exists()) throw "Order not found";
                   const orderData = orderDoc.data() as Order;
 
-                  // Inventory Restore Logic (Simplified for brevity but critical)
-                  // ... [Same logic as previous version to restore stock] ...
-                  
-                  // Restore Menu Stocks (Simplified logic re-implementation)
                   const menuIds = new Set<string>();
                   orderData.items.forEach(i => menuIds.add(i.menuItemId));
                   const menuRefs = Array.from(menuIds).map(id => doc(db!, 'menu', id));
@@ -731,10 +704,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                        }
                   });
 
-                  // Cancel Order
                   transaction.update(orderRef, { status: OrderStatus.CANCELLED });
                   
-                  // Free Table ONLY if it was the last order
                   if (shouldFreeTable) {
                       const tableRef = doc(db!, 'tables', orderData.tableId);
                       transaction.update(tableRef, { status: TableStatus.AVAILABLE, currentOrderId: null });
@@ -745,11 +716,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               alert("Error cancelling: " + e);
           }
       } else {
-          // Local Mode
           if (!orderToCancel) return;
-          // Restore Stock (Simplified)
-          // ... 
-          
           await updateOrderStatus(orderId, OrderStatus.CANCELLED);
           if (shouldFreeTable) {
               setTables(prev => {
@@ -773,7 +740,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // ... (Rest of functions: updateIngredientQuantity, addMenuItem, etc. same as before) ...
   const updateIngredientQuantity = async (itemId: string, delta: number) => {
     const ingName = inventory.find(i => i.id === itemId)?.name;
     const newQuantity = Math.max(0, (inventory.find(i => i.id === itemId)?.quantity || 0) + delta);
@@ -799,12 +765,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const updatedInventory = inventory.map(item => item.id === itemId ? { ...item, quantity: newQuantity } : item);
         setInventory(updatedInventory);
         saveToStorage(KEYS.INVENTORY, updatedInventory);
-        // ... (Menu availability logic same as before)
     }
   };
 
   const addMenuItem = async (item: MenuItem) => {
-    // New: auto assign sortOrder
     const newOrder = menu.length > 0 ? Math.max(...menu.map(m => m.sortOrder || 0)) + 1 : 0;
     const newItem = { ...item, sortOrder: newOrder };
 
@@ -833,38 +797,44 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const item = menu.find(m => m.id === itemId);
       if(!item) return;
 
-      // 2. Filter siblings in same category
-      const siblings = menu.filter(m => m.category === item.category).sort((a,b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      const idx = siblings.findIndex(s => s.id === itemId);
+      // 2. Filter siblings in same category AND SORT BY CURRENT ORDER to ensure sequence
+      const categoryItems = menu
+        .filter(m => m.category === item.category)
+        .sort((a,b) => (a.sortOrder || 0) - (b.sortOrder || 0));
       
+      const idx = categoryItems.findIndex(s => s.id === itemId);
       if(idx === -1) return;
 
-      // 3. Find swap target
-      let swapTarget: MenuItem | undefined;
-      if (direction === 'up' && idx > 0) {
-          swapTarget = siblings[idx - 1];
-      } else if (direction === 'down' && idx < siblings.length - 1) {
-          swapTarget = siblings[idx + 1];
-      }
+      // 3. Find swap target index in the CLEAN ARRAY
+      let targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      
+      // Boundary check
+      if (targetIdx < 0 || targetIdx >= categoryItems.length) return;
 
-      if(!swapTarget) return;
+      // 4. Swap Items in the temporary array
+      const temp = categoryItems[idx];
+      categoryItems[idx] = categoryItems[targetIdx];
+      categoryItems[targetIdx] = temp;
 
-      // 4. Swap Orders
-      const itemOrder = item.sortOrder || 0;
-      const targetOrder = swapTarget.sortOrder || 0;
+      // 5. Re-assign sortOrder for the WHOLE category to 0, 1, 2, 3...
+      // This ensures no duplicates and clean sequencing
+      const updates = categoryItems.map((m, index) => ({
+          id: m.id,
+          sortOrder: index
+      }));
 
-      // 5. Update
+      // 6. Persist Updates
       if (isCloudMode && db) {
           const batch = writeBatch(db!);
-          batch.update(doc(db!, 'menu', item.id), { sortOrder: targetOrder });
-          batch.update(doc(db!, 'menu', swapTarget.id), { sortOrder: itemOrder });
+          updates.forEach(u => {
+             batch.update(doc(db!, 'menu', u.id), { sortOrder: u.sortOrder });
+          });
           await batch.commit();
       } else {
           setMenu(prev => {
              const next = prev.map(m => {
-                 if (m.id === item.id) return { ...m, sortOrder: targetOrder };
-                 if (m.id === swapTarget!.id) return { ...m, sortOrder: itemOrder };
-                 return m;
+                 const update = updates.find(u => u.id === m.id);
+                 return update ? { ...m, sortOrder: update.sortOrder } : m;
              });
              saveToStorage(KEYS.MENU, next);
              return next;
